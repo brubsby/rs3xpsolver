@@ -1,5 +1,6 @@
 import copy
 import csv
+import json
 from itertools import chain
 
 
@@ -42,41 +43,6 @@ def get_contradictory_test_points(filename):
     return contradictory_test_points
 
 
-# ratio boost represented as the numerator over a denominator of 1000
-test_boost_amts = dict( #range,[step]
-    wise = 40, #40
-    torstol = 5, #5-20,5
-    outfit = 10, #10-60,10
-    avatar = 50, #30-60,10
-    yak_track = 200, #100-200,100
-    wisdom = 25, #25
-    bxp = 0, #1000
-    premier = 0, #100
-    scabaras = 0, #100
-    prime = 0, #100-1000,900
-    pulse = 0, #20-100,20
-    cinder = 0, #20-100,20
-    worn_cinder = 0, #1500
-    vos = 0, #200
-    coin = 0, #10-20,10
-    sceptre = 0, #20-40,20
-)
-
-
-# apply function where every nested boost is multiplied by the base amount, then truncated, then added together
-def apply2(base, boosts, boost_amts):
-    for elt in boosts:
-        base = base + sum(base * boost_amts[i] // 1000 for i in elt)
-    return base
-
-
-# apply function where every nested boost is added together, then added to 1000, and then truncated
-def apply1(base, boosts, boost_amts):
-    for elt in boosts:
-        base = (base * (1000 + sum(boost_amts[i] for i in elt))) // 1000
-    return base
-
-
 # convert lists to dict format for internal use
 def get_boost_group(list_or_dict):
     if type(list_or_dict) is list:
@@ -115,7 +81,7 @@ def get_xp_old(base, model, boost_amts):
     return apply(base, model['additive'], boost_amts) + apply(base, model['multiplicative'], boost_amts) - base
 
 
-def get_successors(model, field, groups=False):
+def get_single_generation_of_successors(model, field, groups):
     for key in model.keys():
         boost_group = get_boost_group(model[key])
         boost_list = boost_group['boosts']
@@ -136,6 +102,42 @@ def get_successors(model, field, groups=False):
             yield c
 
 
+# pass a string or list of strings to fields to generate all possible models based on those fields
+def get_successors(starting_model, fields, groups=True):
+    if type(fields) is str:
+        fields = [fields]
+    if len(fields) == 1:
+        groups = False
+    models = [starting_model]
+    for field in fields:  # number of generations of successors
+        next_successors = []
+        for model in models:  # generate the next generation of successors for all models of the previous generation
+            next_successors.append(get_single_generation_of_successors(model, field, groups))
+        models = chain.from_iterable(next_successors)  # flatten
+    return models
+
+
+# ratio boost represented as the numerator over a denominator of 1000
+test_boost_amts = dict( #range,[step]
+    wise = 40, #40
+    torstol = 5, #5-20,5
+    outfit = 10, #10-60,10
+    avatar = 50, #30-60,10
+    yak_track = 200, #100-200,100
+    wisdom = 25, #25
+    bxp = 0, #1000
+    premier = 0, #100
+    scabaras = 0, #100
+    prime = 0, #100-1000,900
+    pulse = 0, #20-100,20
+    cinder = 0, #20-100,20
+    worn_cinder = 0, #1500
+    vos = 0, #200
+    coin = 0, #10-20,10
+    sceptre = 0, #20-40,20
+)
+
+
 correct_model = dict(
     base = [['vos']],
     additive = [['yak_track', 'scabaras', 'prime']],
@@ -151,22 +153,62 @@ correct_model = dict(
 )
 
 # correct_model = {'base': [['vos']], 'additive': [['yak_track', 'scabaras', 'prime']], 'multiplicative': [['wise', 'premier', 'torstol', 'outfit', 'pulse'], ['wisdom'], ['coin', 'sceptre'], ['avatar']], 'bxp': [['worn_cinder'], ['cinder']]}
-test_boost_amts = {'bxp': 0, 'dxp': 0, 'bomb': 0, 'yak_track': 200, 'torstol': 0, 'premier': 100, 'avatar': 50, 'worn_pulse': 0, 'pulse': 100, 'worn_cinder': 0, 'cinder': 100, 'sceptre': 0, 'temp': 30, 'outfit': 50, 'raf': 0, 'aura': 0, 'wise': 40, 'shared': 0, 'vos': 0, 'brawlers': 0, 'inspire': 0, 'wisdom': 0, 'scabaras': 100, 'prime': 0}
+test_boost_amts = {
+  "bxp": 1000,
+  "dxp": 0,
+  "bomb": 0,
+  "yak_track": 200,
+  "torstol": 5,
+  "premier": 0,
+  "avatar": 50,
+  "worn_pulse": 0,
+  "pulse": 0,
+  "worn_cinder": 0,
+  "cinder": 0,
+  "sceptre": 0,
+  "coin": 0,
+  "outfit": 10,
+  "raf": 0,
+  "aura": 0,
+  "wise": 40,
+  "shared": 0,
+  "vos": 0,
+  "brawlers": 0,
+  "inspire": 0,
+  "wisdom": 25,
+  "scabaras": 0,
+  "prime": 0,
+  "temp": 0
+}
 
-base_xp = 1750
-expected = 2334
+base_xp = 2500
+expected = None
 
 xp = get_xp(base_xp, correct_model, test_boost_amts)
-print('original model', (format_xp_tuple(xp)))
+print('Test boosts:')
+print(json.dumps(test_boost_amts, indent=2))
+print('Starting model:')
+print(json.dumps(correct_model, indent=2))
+print('Starting model test result:', xp)
 
-# successors = get_successors(correct_model, 'coin')
-# successors = chain.from_iterable([get_successors(successor, 'sceptre') for successor in successors])
-# successors = [(get_xp(base_xp, model, test_boost_amts), model) for model in successors]
-successors = [(get_xp(base_xp, model, test_boost_amts), model) for model in get_successors(correct_model, 'wisdom')]
-matching_successors = list(filter(lambda entry: expected is not None and entry[0][0] == expected, successors))
-to_print = successors if len(matching_successors) == 0 else matching_successors
+# number of fields greatly increases search space, >O(n^n)
+fields_to_add = ['wisdom']
 
-print('Successor models:')
+all_successors = get_successors(correct_model, fields_to_add)
+
+test_point_successors = [(get_xp(base_xp, model, test_boost_amts), model) for model in all_successors]
+matching_successors = list(filter(lambda entry: expected is not None and entry[0][0] == expected, test_point_successors))
+if len(matching_successors) == 0:
+    to_print = test_point_successors
+    print('No successor models which add {}, matching {} boosted xp for {} base xp, found.'
+          .format(fields_to_add, expected, base_xp))
+    print('Printing all {} successor models and their results:'.format(len(to_print)))
+else:
+    to_print = matching_successors
+    print('{} models which add {}, matching {} boosted xp for {} base xp, found:'
+          .format(len(to_print), fields_to_add, expected, base_xp))
+to_print = test_point_successors if len(matching_successors) == 0 else matching_successors
+
 [print(format_xp_tuple(entry[0]) + str(entry[1])) for entry in to_print]
 print()
 error_points = get_contradictory_test_points('data.csv')
