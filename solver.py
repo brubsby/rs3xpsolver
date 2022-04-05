@@ -1,7 +1,13 @@
 import copy
 import csv
 import json
-from itertools import chain
+from itertools import chain, combinations
+
+
+def powerset(iterable):
+    "powerset([1,2,3]) --> () (1,) (2,) (3,) (1,2) (1,3) (2,3) (1,2,3)"
+    s = list(iterable)
+    return chain.from_iterable(combinations(s, r) for r in range(len(s)+1))
 
 
 def format_xp_int(xp_int, sign=True):
@@ -247,9 +253,9 @@ expected = None
 # number of fields greatly increases search space, >O(n^n)
 # 5 fields crashed my computer
 # fields_to_add = ['wisdom', 'torstol', 'outfit', 'wise']
-fields_to_add = ['yak_track','wisdom','outfit','wise','torstol','avatar']
+fields_to_add = ['outfit','wise','torstol','avatar']
 allowed_failures = 3
-data_filename = 'data.csv'
+data_filename = 'arch.csv'
 
 print('Starting model:')
 print(json.dumps(test_model))
@@ -317,3 +323,7 @@ print()
 # [print(model) for model in list(get_successors(counting_model, map(str, range(3))))]
 # count all possibilities (for oeis)
 # [print(i, len(list(get_successors(counting_model, map(str, range(i)))))) for i in range(10)]
+
+# field_powerset = list(powerset(['wisdom','avatar','torstol','outfit','wise']))
+# # field_powerset.sort(key=lambda)
+# [print(subset) for subset in field_powerset]
