@@ -2,6 +2,7 @@ import copy
 import csv
 import json
 from itertools import chain, combinations
+import textwrap
 
 
 def powerset(iterable):
@@ -20,6 +21,42 @@ def format_xp_int(xp_int, sign=True):
 
 def format_xp_tuple(xp_tuple):
     return '{} xp ({} bonus xp),'.format(format_xp_int(xp_tuple[0]), format_xp_int(xp_tuple[1], False)).ljust(28)
+
+
+def flatten(to_flatten):
+    for x in to_flatten:
+        if hasattr(x, '__iter__') and not isinstance(x, str) and not isinstance(x, tuple):
+            for y in flatten(x):
+                yield y
+        else:
+            yield x
+
+
+# order a list of tuples such that the transition between elements is minimized
+# prioritizing elements in the order of field_order
+# helpful for ordering a list of generated experiments such that annoying to swap boosts are toggled infrequently
+def minimize_transitions(tuple_list, field_order):
+    tuple_lists = [tuple_list]
+    # whether the field is included last (true), or not included last (false), in the previous list
+    for field in field_order:
+        next_tuple_lists = []
+        ending_with = False
+        for tuple_list in tuple_lists:
+            if len(tuple_list) == 1:
+                ending_with = field in tuple_list[0]
+                next_tuple_lists.append(tuple_list)
+            elif len(tuple_list) == 0:
+                continue
+            else:
+                if ending_with:
+                    next_tuple_lists.append(list(filter(lambda this_tuple: field in this_tuple, tuple_list)))
+                    next_tuple_lists.append(list(filter(lambda this_tuple: field not in this_tuple, tuple_list)))
+                else:
+                    next_tuple_lists.append(list(filter(lambda this_tuple: field not in this_tuple, tuple_list)))
+                    next_tuple_lists.append(list(filter(lambda this_tuple: field in this_tuple, tuple_list)))
+                ending_with = not ending_with
+        tuple_lists = next_tuple_lists
+    return flatten(tuple_lists)
 
 
 def get_data_points(filename):
@@ -89,51 +126,44 @@ def get_contradictory_test_points(model, points):
 def apply(base, term, boost_amts):
     xp = base
     for multiplicative_group in term:
-        summed_summing_groups = [sum(boost_amts[boost] for boost in summing_group) for summing_group in multiplicative_group]
-        xp = xp + sum(xp * summed_summing_group // 1000 for summed_summing_group in summed_summing_groups)
+        summed_boosts = sum(boost_amts[boost] for boost in multiplicative_group["boosts"])
+        xp = xp + (xp if multiplicative_group["type"] == "partial" else base) * summed_boosts // 1000
     return xp
 
 
 def get_xp(base, model, boost_amts):
     base = apply(base, model['base'], boost_amts)
     additive = apply(base, model['additive'], boost_amts) - base
-    additive2 = apply(base, model['additive2'], boost_amts) - base
-    additive3 = apply(base, model['additive3'], boost_amts) - base
-    additive4 = apply(base, model['additive4'], boost_amts) - base
     multiplicative = apply(base, model['multiplicative'], boost_amts)
-    bonus_xp = multiplicative * apply(boost_amts['bxp'], model['bxp'], boost_amts) // 1000
-    total = additive + multiplicative + bonus_xp + additive2 + additive3 + additive4
+    bonus_xp = multiplicative * apply(boost_amts['bxp'], model['bonus'], boost_amts) // 1000
+    total = additive + multiplicative + bonus_xp
     return total, total - base
 
 
 def get_single_generation_of_successors(model, field, filtered_terms=[]):
     for key in filter(lambda term: term not in filtered_terms, model.keys()):
-        # the term consists of multiple multiplicative groups for which ordering matters, due to truncation at each step
-        # e.g. [[['wise'], ['torstol'], ['outfit'], ['pulse'], ['coin', 'sceptre']], [['wisdom']], [['avatar']]],
-        # multiplicative groups consists of multiple summing groups, that are truncated as they are summed together
-        # ordering within this group does not matter
-        # e.g. [['wise'], ['torstol'], ['outfit'], ['pulse'], ['coin', 'sceptre']]
-        # summing groups, the smallest possible unit of boost grouping, sum the boosts together before scaling an xp
-        # amount given to them, they can contain 1 or more boosts, ordering within this group does not matter
-        # e.g. ['wise'] or ['coin', 'sceptre']
         term = model[key]
-        # insert a new multiplicative group in the spaces between existing summing groups, consisting of a single
-        # summing group, consisting of a single boost
         for index in range(len(term) + 1):
-            c = copy.deepcopy(model)
-            c[key].insert(index, [[field]])
-            yield c
-        # add a new summing group within each multiplicative group, consisting of a single boost
+            if index == 0:
+                c = copy.deepcopy(model)
+                c[key].insert(index, {"type": "partial", "boosts": [field]})
+                if len(c[key]) > 1:
+                    c[key][index + 1]["type"] = "partial"
+                    yield c
+                    c = copy.deepcopy(c)
+                    c[key][index + 1]["type"] = "base"
+                    yield c
+                else:
+                    yield c
+            else:
+                for group_type in ["partial", "base"]:
+                    c = copy.deepcopy(model)
+                    c[key].insert(index, {"type": group_type, "boosts": [field]})
+                    yield c
         for index in range(len(term)):
             c = copy.deepcopy(model)
-            c[key][index].append([field])
+            c[key][index]["boosts"].append(field)
             yield c
-        # add the boost into each existing summing group
-        for i in range(len(term)):
-            for j in range(len(term[i])):
-                c = copy.deepcopy(model)
-                c[key][i][j].append(field)
-                yield c
 
 
 # pass a string or list of strings to fields to generate all possible models based on those fields
@@ -167,9 +197,28 @@ def filter_models(models, data_points, allowed_failures=0):
 def get_model_fields(model):
     for term in model:
         for multiplicative_group in model[term]:
-            for non_truncating_multiplicative_group in multiplicative_group:
-                for boost in non_truncating_multiplicative_group:
+            for boost in multiplicative_group["boosts"]:
                     yield boost
+
+
+def inline_dict_to_constructor_string(dict_to_string):
+    return_value = "dict({})".format(
+        " ".join([entry[0] + "=" + (str(entry[1]) if type(entry[1]) is list else ("\"" + entry[1] + "\",").ljust(10)) for entry in dict_to_string.items()])
+    )
+    return return_value
+
+
+# kinda silly, but formats a model to print readable and compact. if the model changes and this looks ugly just delete
+def model_to_string(model, indent=0):
+    return_value = "dict({})".format(
+        "".join([
+            "\n    {}=[{}], ".format(term, "".join(["\n        " + inline_dict_to_constructor_string(group) + ", " for group in model[term]])) for term in model
+        ])
+    )
+    if indent == 0:
+        return return_value
+    else:
+        return textwrap.indent(return_value, " " * indent)
 
 
 # base xp amounts that might prove useful
@@ -212,34 +261,42 @@ test_boost_amts = dict(  # range,[step]
     sceptre=0,  # 20-40,20
 )
 
-sota_model = dict(
+old_model = dict(
     base=[[['vos']]],
+    base2=[],
     additive=[[['yak_track'], ['scabaras'], ['prime']]],
-    additive2=[],
-    additive3=[],
-    additive4=[],
     multiplicative=[[['wise'], ['premier'], ['torstol'], ['outfit'], ['pulse'], ['coin', 'sceptre']], [['wisdom']], [['avatar']]],
-    bxp=[[['worn_cinder']], [['cinder']]]
+    bonus=[[['worn_cinder']], [['cinder']]]
 )
 
-test_model = dict(
-    base=[[['vos']]],
-    additive=[[['yak_track'], ['scabaras'], ['prime']]],
-    additive2=[],
-    additive3=[],
-    additive4=[],
-    multiplicative=[[['premier'], ['pulse']], [['avatar']]],
-    bxp=[[['worn_cinder']], [['cinder']]]
-)
-
-test_model = dict(
+sota_model = dict(
     base=[],
-    additive=[],
-    additive2=[],
-    additive3=[],
-    additive4=[],
-    multiplicative=[],
-    bxp=[]
+    additive=[
+        {"type": "partial", "boosts": ['yak_track']}
+    ],
+    multiplicative=[
+        {"type": "partial", "boosts": ['wise', 'outfit']},
+        {"type": "partial", "boosts": ['wisdom']},
+        {"type": "base", "boosts": ['torstol']},
+        {"type": "partial", "boosts": ['avatar']},
+    ],
+    bonus=[],
+)
+
+test_model = dict(
+    base=[
+        {'type': 'partial', 'boosts': ['vos']}
+    ],
+    additive=[
+        {"type": "partial", "boosts": ['yak_track']}
+    ],
+    multiplicative=[
+        {"type": "partial", "boosts": ['wise', 'outfit']},
+        {"type": "partial", "boosts": ['wisdom']},
+        {"type": "base", "boosts": ['torstol']},
+        {"type": "partial", "boosts": ['avatar']},
+    ],
+    bonus=[],
 )
 
 counting_model = dict(first=[])
@@ -251,11 +308,10 @@ expected = None
 
 
 # number of fields greatly increases search space, >O(n^n)
-# 5 fields crashed my computer
 # fields_to_add = ['wisdom', 'torstol', 'outfit', 'wise']
-fields_to_add = ['outfit','wise','torstol','avatar']
-allowed_failures = 3
-data_filename = 'arch.csv'
+fields_to_add = ['prime', 'premier']
+allowed_failures = 0
+data_filename = 'data.csv'
 
 print('Starting model:')
 print(json.dumps(test_model))
@@ -264,7 +320,7 @@ print('Loading data to test successor models against:')
 data_points = get_data_points(data_filename)
 print('{} data points loaded from {}'.format(len(data_points), data_filename))
 # get the list of fields we're modeling
-tracked_fields = list(get_model_fields(test_model)) + fields_to_add  # + ["bxp"]
+tracked_fields = list(get_model_fields(test_model)) + fields_to_add + ["bxp"]
 print(tracked_fields)
 print("Filtering data that uses boosts we aren't currently tracking: {}".format(tracked_fields))
 
@@ -281,10 +337,11 @@ print('Generating and testing successor models by adding {}...'.format(fields_to
 all_successors = list(get_successors(test_model, fields_to_add))
 successful_models = list(filter_models(all_successors, test_filtered_points, allowed_failures))
 print("{} error free successor models, printing at most 100".format(len(successful_models)))
-[print(model) for model in successful_models[:100]]
+print("candiate_models = [\n"+",\n".join([model_to_string(model, 4) for model in successful_models[:100]]) + "]")
 
 
-error_points = get_contradictory_test_points(sota_model, data_points)
+sota_test_filtered_points = filter_data_points(get_model_fields(sota_model), data_points)
+error_points = get_contradictory_test_points(sota_model, sota_test_filtered_points)
 print('{} contradictory samples calculated with sota model, printing...'.format(len(error_points)))
 for error_point_dict in error_points:
     xp_vals = error_point_dict['xp_vals']
@@ -327,3 +384,4 @@ print()
 # field_powerset = list(powerset(['wisdom','avatar','torstol','outfit','wise']))
 # # field_powerset.sort(key=lambda)
 # [print(subset) for subset in field_powerset]
+
