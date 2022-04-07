@@ -1,9 +1,11 @@
 import copy
 import csv
 import json
-from itertools import chain, combinations
 import textwrap
+from itertools import chain, combinations, product
 
+def inclusive_range(start, stop, step):
+    return range(start, stop+step, step)
 
 def powerset(iterable):
     "powerset([1,2,3]) --> () (1,) (2,) (3,) (1,2) (1,3) (2,3) (1,2,3)"
@@ -222,7 +224,13 @@ def model_to_string(model, indent=0):
 
 
 # base xp amounts that might prove useful
-activities = {
+wc_activities = {
+    "yew": 1750,
+    "magic": 2500,
+    "idol": 3835,
+    "bamboo": 2025,
+    "gbamboo": 6555,
+    "crystal": 4345,
     "tree": 250,
     "oak": 375,
     "willow": 675,
@@ -231,14 +239,8 @@ activities = {
     "maple": 1000,
     "mahogany": 1250,
     "eucalyptus": 1650,
-    "yew": 1750,
-    "bamboo": 2025,
-    "magic": 2500,
     "elder": 3250,
     "ivy": 3325,
-    "idol": 3835,
-    "crystal": 4345,
-    "gbamboo": 6555,
 }
 
 # ratio boost represented as the numerator over a denominator of 1000
@@ -285,43 +287,127 @@ sota_model = dict(
 
 test_model = dict(
     base=[
-        {'type': 'partial', 'boosts': ['vos']}
-    ],
+        dict(type="partial", boosts=['vos']), ],
     additive=[
-        {"type": "partial", "boosts": ['yak_track']}
-    ],
+        dict(type="partial", boosts=['yak_track']), ],
     multiplicative=[
-        {"type": "partial", "boosts": ['wise', 'outfit']},
-        {"type": "partial", "boosts": ['wisdom']},
-        {"type": "base", "boosts": ['torstol']},
-        {"type": "partial", "boosts": ['avatar']},
-    ],
-    bonus=[],
-)
+        dict(type="partial", boosts=['wise', 'outfit', 'premier']),
+        dict(type="partial", boosts=['wisdom']),
+        dict(type="base",    boosts=['torstol']),
+        dict(type="partial", boosts=['avatar']), ],
+    bonus=[], )
 
 counting_model = dict(first=[])
 
+
+
+
+# iterables that when product-ed together will produce all boost combinations
+# number of boost combinations total is at most equal to the product of total levels of each boost
+general_boost_iterables = dict(
+    wise=inclusive_range(0, 40, 10),
+    torstol=inclusive_range(0, 20, 5),
+    outfit=inclusive_range(0, 60, 10),  # different for different skills, some of these might need to be pruned
+    avatar=chain([0], inclusive_range(30, 60, 10)),
+    yak_track=inclusive_range(0, 200, 100),
+    wisdom=inclusive_range(0, 25, 25),
+    bxp=inclusive_range(0, 1000, 1000),
+    premier=inclusive_range(0, 100, 100),
+    scabaras=inclusive_range(0, 100, 100),
+    prime=chain([0], inclusive_range(100, 1000, 900)),
+    pulse=inclusive_range(0, 100, 20),
+    worn_pulse=inclusive_range(0, 500, 500),
+    cinder=inclusive_range(0, 100, 20),
+    worn_cinder=inclusive_range(0, 1500, 1500),
+    vos=inclusive_range(0, 200, 200),
+    coin=inclusive_range(0, 20, 10),
+    sceptre=inclusive_range(0, 40, 20),
+)
+
+# each boost lists the order in which their state is the most to least preferable, for experiment design
+# this would be filled differently for different players with different accounts, or changed as circumstances change
+# ordering here also matters, as it affects the order boosts are iterated through, leave the ones you don't want to
+# change at the front
+boost_preferences = dict(
+    yak_track=[200, 0, 100],
+    vos=[0, 200],
+    wise=[0, 40, 30, 20, 10],
+    prime=[0, 100, 1000],
+    bxp=[1000, 0],
+    cinder=[0, 100, 20, 40, 60, 80],
+    worn_cinder=[0, 1500],
+    pulse=[0, 100, 20, 40, 60, 80],
+    worn_pulse=[0, 500],
+    coin=[0, 10, 20],
+    sceptre=[0, 20, 40],
+    wisdom=[0, 25],
+    scabaras=[0, 100],
+    premier=[0, 100],
+    avatar=[60, 0, 50, 40, 30],
+    torstol=[0, 5, 20, 15, 10],
+    outfit=[0, 10, 20, 30, 40, 50, 60],
+)
+
+# states for which I am currently unable to test for various reasons
+boost_invalids = dict(
+    outfit=[50],  # 4 piece outfit
+    avatar=[50, 40, 30],  # avatar bonus only 60 or 0 if max fealty
+    yak_track=[0, 100],  # can't toggle yak track
+    bxp=[1000],
+    premier=[100],
+    # wisdom=[0],
+)
+
+
+# return false if an impossible boost state is defined
+def validate_boost_amts(boost_amts):
+    wisdom = "wisdom" in boost_amts and boost_amts["wisdom"] > 0
+    scabaras = "scabaras" in boost_amts and boost_amts["scabaras"] > 0
+    prime = "prime" in boost_amts and boost_amts["prime"] > 0
+    if (wisdom and scabaras) or (scabaras and prime) or (prime and wisdom):
+        return False
+    if "worn_cinder" in boost_amts and boost_amts["worn_cinder"] > 0 \
+            and "worn_pulse" in boost_amts and boost_amts["worn_pulse"] > 0:
+        return False
+    return True
+
+
+# return false if an impossible experiment is defined
+def validate_experiment(experiment):
+    activity_name = experiment['activity'][0]
+    boost_amts = experiment['boost_amts']
+    if "vos" in boost_amts and boost_amts["vos"] > 0 and activity_name not in ["yew", "magic"]:
+        return False
+    return True
+
+
+activities = {
+    "artefact": 366667,
+}
+activities.update(wc_activities)
+
+
+run_individual_point_test = False
 # base xp for singular data point tests
-test_base_xp = activities["idol"]
+test_base_xp = wc_activities["yew"]
 # None to show all successor models
 expected = None
 
 
 # number of fields greatly increases search space, >O(n^n)
 # fields_to_add = ['wisdom', 'torstol', 'outfit', 'wise']
-fields_to_add = ['prime', 'premier']
+fields_to_add = ['prime']
 allowed_failures = 0
 data_filename = 'data.csv'
 
 print('Starting model:')
-print(json.dumps(test_model))
+print(model_to_string(test_model))
 
 print('Loading data to test successor models against:')
 data_points = get_data_points(data_filename)
 print('{} data points loaded from {}'.format(len(data_points), data_filename))
 # get the list of fields we're modeling
 tracked_fields = list(get_model_fields(test_model)) + fields_to_add + ["bxp"]
-print(tracked_fields)
 print("Filtering data that uses boosts we aren't currently tracking: {}".format(tracked_fields))
 
 
@@ -352,29 +438,29 @@ for error_point_dict in error_points:
           .format(discrepancy, calculated, observed, xp_vals['base'], error_point_dict['boost_vals']))
 
 
+if run_individual_point_test:
+    # code that tests a specific data point
+    print('Showing successor model results for specific data point')
+    xp = get_xp(test_base_xp, test_model, test_boost_amts)
+    print('Test boosts:')
+    print(json.dumps(test_boost_amts, indent=2))
+    print('Starting model test result:', xp)
 
-# code that tests a specific data point
-print('Showing successor model results for specific data point')
-xp = get_xp(test_base_xp, test_model, test_boost_amts)
-print('Test boosts:')
-print(json.dumps(test_boost_amts, indent=2))
-print('Starting model test result:', xp)
-
-test_point_successors = [(get_xp(test_base_xp, model, test_boost_amts), model) for model in all_successors]
-matching_successors = list(
-    filter(lambda entry: expected is not None and entry[0][0] == expected, test_point_successors))
-if len(matching_successors) == 0:
-    to_print = test_point_successors
-    print('No successor models which add {}, matching {} boosted xp for {} base xp, found.'
-          .format(fields_to_add, expected, test_base_xp))
-    print('Printing at most 100 of the {} successor models and their results:'.format(len(to_print)))
-else:
-    to_print = matching_successors
-    print('{} models which add {}, matching {} boosted xp for {} base xp, found. Printing at most 100:'
-          .format(len(to_print), fields_to_add, expected, test_base_xp))
-to_print = test_point_successors if len(matching_successors) == 0 else matching_successors
-[print(format_xp_tuple(entry[0]) + str(entry[1])) for entry in to_print[:100]]
-print()
+    test_point_successors = [(get_xp(test_base_xp, model, test_boost_amts), model) for model in all_successors]
+    matching_successors = list(
+        filter(lambda entry: expected is not None and entry[0][0] == expected, test_point_successors))
+    if len(matching_successors) == 0:
+        to_print = test_point_successors
+        print('No successor models which add {}, matching {} boosted xp for {} base xp, found.'
+              .format(fields_to_add, expected, test_base_xp))
+        print('Printing at most 100 of the {} successor models and their results:'.format(len(to_print)))
+    else:
+        to_print = matching_successors
+        print('{} models which add {}, matching {} boosted xp for {} base xp, found. Printing at most 100:'
+              .format(len(to_print), fields_to_add, expected, test_base_xp))
+    to_print = test_point_successors if len(matching_successors) == 0 else matching_successors
+    [print(format_xp_tuple(entry[0]) + str(entry[1])) for entry in to_print[:100]]
+    print()
 
 # debug new successors generation
 # [print(model) for model in list(get_successors(counting_model, map(str, range(3))))]
@@ -385,3 +471,79 @@ print()
 # # field_powerset.sort(key=lambda)
 # [print(subset) for subset in field_powerset]
 
+# next up, experiment suggester
+# first, generate candidate models that could explain all data with new boosts (we already do this)
+# next, generate all possible sets of boosts and activity xps, these are all possible experiments
+# test the candidate models for all experiments
+# choose the experiment that produces the widest array of different xp values for all models
+# i.e. choose the experiment that minimizes the largest number of models producing the same xp
+# if there are multiple experiments which produce optimal results, sort by how annoying it is to do an experiment
+# if all experiments produce one value for all models, something is wrong
+
+
+def boost_iterables_to_boost_value_tuples(boost_iterables):
+    for boost, levels in boost_iterables.items():
+        yield [(boost, level) for level in levels]
+
+
+def boost_value_product_to_boost_vals_dict(boost_value_product):
+    for boost_value_tuples in boost_value_product:
+        boost_amts = dict(boost_value_tuples)
+        if validate_boost_amts(boost_amts):
+            yield boost_amts
+
+
+def count_iterable(it):
+    return sum(1 for dummy in it)
+
+
+# generate all valid boost combinations given a boost to iterable of values map
+# and a similar boost to value map of currently impossible values
+# also pass in the per_boost_depth to only calculate combinations based on the nth most preferred boost values per boost
+def generate_valid_boost_combinations(boost_iterables, invalid_boost_values, tracked_boosts, per_boost_depth=0):
+    boosts_less_invalids = copy.deepcopy(boost_iterables)
+    for boost in list(boosts_less_invalids.keys()):
+        if boost not in tracked_boosts:
+            del boosts_less_invalids[boost]
+    for boost, values in invalid_boost_values.items():
+        if boost in boosts_less_invalids:
+            boosts_less_invalids[boost] = list(filter(lambda boost: boost not in values, boosts_less_invalids[boost]))
+    for boost in tracked_boosts:
+        if per_boost_depth > 0:
+            boosts_less_invalids[boost] = boosts_less_invalids[boost][:per_boost_depth]
+    boost_value_product = product(*boost_iterables_to_boost_value_tuples(boosts_less_invalids))
+    return boost_value_product_to_boost_vals_dict(boost_value_product)
+
+
+if len(successful_models) > 1:
+    print("Attempting to narrow down the valid candidate models by generating you an experiment")
+    # generate all possible boost levels
+    boost_combinations = generate_valid_boost_combinations(boost_preferences, boost_invalids, tracked_fields)
+    experiments_product = product(boost_combinations, wc_activities.items())
+    experiment_dicts = (dict(activity=activity, boost_amts=boost_amts) for boost_amts, activity in experiments_product)
+    experiment_dicts = filter(validate_experiment, experiment_dicts)
+
+    min_score = 999999
+    experiment = {}
+    for experiment_dict in experiment_dicts:
+        boost_amts = experiment_dict["boost_amts"]
+        activity_xp = experiment_dict["activity"][1]
+        model_xps = {}
+        for model in successful_models:
+            xp_tuple = get_xp(activity_xp, model, boost_amts)
+            model_xps[xp_tuple] = (1 if xp_tuple not in model_xps else (model_xps[xp_tuple] + 1))
+        # a lower score means the experiments have a larger amount of different outcomes across models
+        score = sum(map(lambda count: count-1, model_xps.values()))
+        if score < min_score:
+            experiment = experiment_dict
+            min_score = score
+            print("score:", score, experiment)
+
+    test_point_successors = [(get_xp(experiment["activity"][1], model, experiment['boost_amts']), model) for model in successful_models]
+    print('xp values from "best" experiment')
+    [print(test_point_successor) for test_point_successor in test_point_successors]
+    print("Perform this experiment:")
+    print(json.dumps(experiment["activity"]))
+    print(json.dumps(dict(filter(lambda entry: entry[1] > 0, experiment['boost_amts'].items())), indent=1))
+else:
+    print("Successful models is 0 or 1, no need to generate experiments.")
