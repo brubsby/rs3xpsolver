@@ -345,11 +345,14 @@ activities.update(wc_activities)
 # activities.update(crafting_activites)
 
 # vos/focus order currently unknowable due to each being 20%
-# shared is mutex with each focus, vos, portable
-# portable is mutex with each focus, shared
-# vos proven to come before portable
+# crystallise is mutex with portable, focus, shared
+# shared is mutex with focus, vos, portable, crystallise
+# portable is mutex with each focus, shared, crystallise
+# focus is mutex with crystallise, portable, shared
+# shared is mutex with crystallise, portable, focus
+# vos proven to come before portable and crystallise
 sota_model = dict(
-    base=[["vos"], ["portable"], ["focus"], ["shared"]],
+    base=[["vos"], ["crystallise"], ["portable"], ["focus"], ["shared"]],
     additive=[["yak_track", "prime", "scabaras", "bomb"]],
     chain1=[["worn_pulse"], ["pulse"], ["sceptre"], ["coin"], ["torstol"]],
     chain2=[["wise", "outfit", "premier", "inspire"], ["wisdom"], ["brawlers"]],
@@ -359,7 +362,7 @@ sota_model = dict(
 )
 
 test_model = dict(
-    base=[["vos"], ["portable"], ["focus"], ["shared"]],
+    base=[["vos"], ["crystallise"], ["portable"], ["focus"], ["shared"]],
     additive=[["yak_track", "prime", "scabaras", "bomb"]],
     chain1=[["worn_pulse"], ["pulse"], ["sceptre"], ["coin"], ["torstol"]],
     chain2=[["wise", "outfit", "premier", "inspire"], ["wisdom"], ["brawlers"]],
