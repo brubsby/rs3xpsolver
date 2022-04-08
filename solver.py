@@ -319,15 +319,37 @@ firemaking_activities = {
     "fm_driftwood": 4540,
 }
 
+crafting_activites = {
+    "cut_dragonstone": 1375,
+}
+
+fishing_activities = {
+
+}
+
+mining_activities = {
+
+}
+
+hunter_activities = {
+
+}
+
 activities = {}
-# activities.update(wc_activities)
+activities.update(wc_activities)
+# activities.update(fishing_activities)
+# activities.update(mining_activities)
 # activities.update(summoning_activites)
 # activities.update(arch_activities)
-activities.update(firemaking_activities)
+# activities.update(firemaking_activities)
+# activities.update(crafting_activites)
 
-# vos/focus order currently unknowable, shared mutex with focus+vos
+# vos/focus order currently unknowable due to each being 20%
+# shared is mutex with each focus, vos, portable
+# portable is mutex with each focus, shared
+# vos proven to come before portable
 sota_model = dict(
-    base=[["vos"], ["focus"], ["shared"]],
+    base=[["vos"], ["portable"], ["focus"], ["shared"]],
     additive=[["yak_track", "prime", "scabaras", "bomb"]],
     chain1=[["worn_pulse"], ["pulse"], ["sceptre"], ["coin"], ["torstol"]],
     chain2=[["wise", "outfit", "premier", "inspire"], ["wisdom"], ["brawlers"]],
@@ -337,7 +359,7 @@ sota_model = dict(
 )
 
 test_model = dict(
-    base=[["vos"], ["focus"], ["shared"]],
+    base=[["vos"], ["portable"], ["focus"], ["shared"]],
     additive=[["yak_track", "prime", "scabaras", "bomb"]],
     chain1=[["worn_pulse"], ["pulse"], ["sceptre"], ["coin"], ["torstol"]],
     chain2=[["wise", "outfit", "premier", "inspire"], ["wisdom"], ["brawlers"]],
@@ -356,7 +378,7 @@ counting_model = dict(first=[])
 general_boost_iterables = dict(
     wise=[*inclusive_range(0, 40, 10)],
     torstol=[*inclusive_range(0, 20, 5)],
-    outfit=[*inclusive_range(0, 60, 10)],  # different for different skills, some of these might need to be pruned
+    outfit=[*inclusive_range(0, 60, 10)],
     avatar=[0, *inclusive_range(30, 60, 10)],
     yak_track=[*inclusive_range(0, 200, 100)],
     wisdom=[*inclusive_range(0, 25, 25)],
@@ -376,6 +398,8 @@ general_boost_iterables = dict(
     shared=[*inclusive_range(0, 250, 250)],
     brawlers=[0, *inclusive_range(500, 3000, 2500)],
     bomb=[*inclusive_range(0, 500, 500)],
+    portable=[*inclusive_range(0, 100, 100)],
+    crystallise=[0, 200, 400, 500, 875],
 )
 
 # each boost lists the order in which their state is the most to least preferable, for experiment design
@@ -383,8 +407,12 @@ general_boost_iterables = dict(
 # ordering here also matters, as it affects the order boosts are iterated through, leave the ones you don't want to
 # change at the front
 boost_preferences = dict(
+    bomb=[0, 500],
+    inspire=[0, 20],
+    brawlers=[0, 500, 3000],
     yak_track=[200, 0, 100],
     vos=[0, 200],
+    portable=[0, 100],
     wise=[0, 40, 30, 20, 10],
     prime=[0, 100, 1000],
     bxp=[0, 1000],
@@ -398,13 +426,11 @@ boost_preferences = dict(
     scabaras=[0, 100],
     premier=[0, 100],
     avatar=[60, 0, 50, 40, 30],
-    torstol=[20, 0, 5, 15, 10],
+    torstol=[0, 5, 20, 15, 10],
     outfit=[0, 10, 20, 30, 40, 50, 60],
-    inspire=[0, 20],
     focus=[0, 200],
     shared=[0, 250],
-    brawlers=[0, 500, 3000],
-    bomb=[0, 500]
+    crystallise=[0, 200, 400, 500, 875],  # 500(875) when wc/fish/hunt, 200(400) mining (light form)
 )
 
 # states for which I am currently unable to test for various reasons
@@ -414,8 +440,8 @@ boost_invalids = dict(
     yak_track=[0, 100],  # can't toggle yak track
     bxp=[1000],
     premier=[100],
-    coin=[20, 10],
-    sceptre=[40, 20],
+    coin=[20, 0],
+    sceptre=[40, 0],
     worn_pulse=[500],
     worn_cinder=[1500],
     # pulse=[100,20,40,60,80],
@@ -428,15 +454,21 @@ boost_invalids = dict(
 # return false if an impossible boost state is defined
 # add more rules here if it suggests an experiment with a boost combination that's not possible (e.g. same slot)
 def validate_boost_amts(boost_amts):
-    wisdom = "wisdom" in boost_amts and boost_amts["wisdom"] > 0
-    scabaras = "scabaras" in boost_amts and boost_amts["scabaras"] > 0
-    prime = "prime" in boost_amts and boost_amts["prime"] > 0
+    boost_on = defaultdict(int)
+    boost_on.update(
+        map(lambda boost_amt_entry: (boost_amt_entry[0], boost_amt_entry[1] > 0), boost_amts.items()))
     # mutually exclusive (worn aura slot)
-    if (wisdom and scabaras) or (scabaras and prime) or (prime and wisdom):
+    if (boost_on["wisdom"] and boost_on["scabaras"]) or (boost_on["scabaras"] and boost_on["prime"]) or (
+            boost_on["prime"] and boost_on["wisdom"]):
         return False
     # mutually exclusive (pocket slot)
-    if "worn_cinder" in boost_amts and boost_amts["worn_cinder"] > 0 \
-            and "worn_pulse" in boost_amts and boost_amts["worn_pulse"] > 0:
+    if boost_on["worn_cinder"] > 0 and boost_on["worn_pulse"] > 0:
+        return False
+    # can't use shared knowledge or summoning focus with portables
+    if boost_on["portable"] and (boost_on["shared"] or boost_on["focus"]):
+        return False
+    # can't use shared knowledge with focus or vos
+    if boost_on["shared"] and (boost_on["focus"] or boost_on["vos"]):
         return False
     return True
 
@@ -445,15 +477,23 @@ def validate_boost_amts(boost_amts):
 # add more rules here if it suggests an invalid experiment due to boost/activity incompatibility
 def validate_experiment(experiment):
     activity_name = experiment['activity'][0]
-    boost_amts = experiment['boost_amts']
+    boost_on = defaultdict(int)
+    boost_amts_ = experiment['boost_amts']
+    boost_on.update(
+        map(lambda boost_amt_entry: (boost_amt_entry[0], boost_amt_entry[1] > 0), boost_amts_.items()))
     # voice of seren can only effect yew and magic trees, summoning
-    if "vos" in boost_amts and boost_amts["vos"] > 0 and activity_name not in ["yew", "magic", "ivy"] + list(summoning_activites.keys()):
+    if boost_on["vos"] and activity_name not in ["yew", "magic", "ivy"] + list(
+            summoning_activites.keys()):
         return False
     # yak track doesn't apply for artefact restoration
-    if "yak_track" in boost_amts and boost_amts["yak_track"] > 0 and activity_name in arch_activities.keys():
+    if boost_on["yak_track"] and activity_name in arch_activities.keys():
         return False
     # can't use summoning focus on anything other than summoning
-    if "focus" in boost_amts and boost_amts["focus"] > 0 and activity_name not in summoning_activites.keys():
+    if boost_on["focus"] and activity_name not in summoning_activites.keys():
+        return False
+    if boost_on["crystallise"] \
+            and ((boost_amts_["crystallise"] in [500, 875] and activity_name not in list(chain(wc_activities, fishing_activities, hunter_activities)))  # fish/hunt too
+                 or (boost_amts_["crystallise"] in [200, 400] and activity_name not in mining_activities)):
         return False
     return True
 
@@ -466,9 +506,10 @@ test_base_xp = wc_activities["wc_yew"]
 expected = None
 
 
-# number of fields greatly increases search space, >O(n^n)
-fields_to_add = []
-# fields_to_add = ['yak_track']
+# number of fields greatly increases search space, >A083355(n)
+# ['ectofuntus', 'prayer_aura', 'dragon_gloves', 'runecrafting_gloves', 'god_potion', 'bonfire', 'dxp', 'furnace']
+# fields_to_add = []
+fields_to_add = ["crystallise"]
 allowed_failures = 0
 data_filename = 'data.csv'
 
@@ -569,7 +610,7 @@ if len(successful_models) > 1:
     print("Attempting to narrow down the {} valid candidate models by generating you an experiment".format(len(successful_models)))
     print("Score is in the range of {}-0, with lower being better".format(len(successful_models)-1))
     # generate all possible boost levels
-    boost_combinations = generate_valid_boost_combinations(boost_preferences, boost_invalids, tracked_fields)
+    boost_combinations = generate_valid_boost_combinations(boost_preferences, boost_invalids, tracked_fields, 2)
     experiments_product = product(boost_combinations, activities.items())
     experiment_dicts = (dict(activity=activity, boost_amts=boost_amts) for boost_amts, activity in experiments_product)
     experiment_dicts = filter(validate_experiment, experiment_dicts)

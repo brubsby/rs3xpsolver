@@ -1,4 +1,4 @@
-xp	(bonus)	base	bxp	dxp	bomb	yak_track	torstol	premier	avatar	worn_pulse	pulse	worn_cinder	cinder	sceptre	coin	outfit	raf	aura	wise	shared	vos	brawlers	inspire	wisdom	scabaras	prime	focus
+xp	(bonus)	base	bxp	dxp	bomb	yak_track	torstol	premier	avatar	worn_pulse	pulse	worn_cinder	cinder	sceptre	coin	outfit	raf	aura	wise	shared	vos	brawlers	inspire	wisdom	scabaras	prime	focus	portable	crystallise
 175.0		175.0
 210.0		175.0				0.2
 218.7		175.0				0.2			0.05
@@ -183,3 +183,8 @@ xp	(bonus)	base	bxp	dxp	bomb	yak_track	torstol	premier	avatar	worn_pulse	pulse	w
 1472.3	1168.5	303.8				0.2	0.02		0.06		0.1		0.1						0.04			3		0.025
 1571.6	1267.8	303.8			0.5	0.2	0.02		0.06		0.1		0.1									3		0.025
 591.1	287.3	303.8			0.5	0.2			0.06		0.1		0.1			0.05								0.025
+213.2	62.0	137.5				0.2			0.06		0.1		0.1	0.02	0.01	0.01												0.1
+1849.5	529.5	1000.0				0.2			0.06		0.1		0.1	0.02	0.01						0.2							0.1
+287.6	82.2	155.7				0.2			0.06		0.1		0.1	0.02	0.01						0.2							0.1
+834.1	519.1	175.0	1			0.2			0.06		0.1		0.1								0.2								0.5
+	648.6	175.0	1			0.2			0.06		0.1		0.1								0.2								0.875
