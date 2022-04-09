@@ -106,12 +106,14 @@ def get_fields_without_data(fields_to_verify, data_points):
     return list(field_set)
 
 
+def calculate_data_point_xp(model, point):
+    return get_xp(point['xp_vals']['base'], model, point['boost_vals'])
+
+
 # true if valid model for point, false otherwise
 def test_data_point(model, point):
-    point_xp_vals = point['xp_vals']
-    point_boost_vals = point['boost_vals']
-    row_xp = get_xp(point_xp_vals['base'], model, point_boost_vals)
-    return point_xp_vals['xp'] == row_xp[0] and (point_xp_vals['(bonus)'] == 0 or point_xp_vals['(bonus)'] == row_xp[1])
+    row_xp = calculate_data_point_xp(model, point)
+    return point['xp_vals']['xp'] == row_xp[0] and point['xp_vals']['(bonus)'] == row_xp[1]
 
 
 # return all
@@ -128,24 +130,24 @@ def get_contradictory_test_points(model, points):
     return contradictory_data_points
 
 
-def apply(base, term, boost_amts):
+def apply(base, term, boost_vals):
     xp = base
     for multiplicative_group in term:
-        summed_boosts = sum(boost_amts[boost] for boost in multiplicative_group)
+        summed_boosts = sum(boost_vals[boost] for boost in multiplicative_group)
         xp = xp + xp * summed_boosts // 1000
     return xp
 
 
-def get_xp(base, model, boost_amts):
-    base = apply(base, model['base'], boost_amts)
-    additive = apply(base, model['additive'], boost_amts) - base
-    chain1 = apply(base, model['chain1'], boost_amts) - base
-    chain2 = apply(base, model['chain2'], boost_amts) - base
-    chain3 = apply(base, model['chain3'], boost_amts) - base
-    multiplicative = apply(chain1 + chain2 + chain3 + base, model['multiplicative'], boost_amts)
+def get_xp(base, model, boost_vals):
+    base = apply(base, model['base'], boost_vals)
+    additive = apply(base, model['additive'], boost_vals) - base
+    chain1 = apply(base, model['chain1'], boost_vals) - base
+    chain2 = apply(base, model['chain2'], boost_vals) - base
+    chain3 = apply(base, model['chain3'], boost_vals) - base
+    multiplicative = apply(chain1 + chain2 + chain3 + base, model['multiplicative'], boost_vals)
     bonus_xp = 0
-    if min(boost_amts.get('bxp'), 1000):
-        bonus_xp = apply(multiplicative, model['bonus'], boost_amts)
+    if min(boost_vals.get('bxp'), 1000):
+        bonus_xp = apply(multiplicative, model['bonus'], boost_vals)
     total = additive + multiplicative + bonus_xp
     return total, total - base
 
@@ -195,7 +197,7 @@ def get_model_fields(model):
     for term in model:
         for multiplicative_group in model[term]:
             for boost in multiplicative_group:
-                    yield boost
+                yield boost
     yield "bxp"
 
 
@@ -237,7 +239,7 @@ def term_to_program_string(variable_initialization, variable_name, term, ):
 def model_to_program(model, ranges, data_point=None):
     if not data_point:
         data_point = {"xp_vals": defaultdict(int),
-                      "boost_amts": defaultdict(int)}
+                      "boost_vals": defaultdict(int)}
     variables_string = "-- all boosts as their differential bonus / 1000\n"
     variables_string += \
         "\n".join("{} = {}".format(field, data_point["boost_vals"][field]).ljust(18) + "  -- {}".format(str(ranges[field])) for field in get_model_fields(model))
@@ -335,45 +337,121 @@ hunter_activities = {
 
 }
 
+dragon_bone_activities = {
+    "baby_dragon_bones": 300,
+    "dragon_bones": 720,
+    "hardened_dragon_bones": 1440,
+    "dragonkin_bones": 1600,
+    "frost_dragon_bones": 1800,
+    "reinforced_dragon_bones": 1900,
+}
+
+bone_activities = {
+    "bones": 45,
+    "big_bones": 150,
+    "wyvern_bones": 500,
+    "dagannoth_bones": 1250,
+    "airut_bones": 1325,
+    "ourg_bones": 1400,
+    "dinosaur_bones": 1700,
+}
+
+bone_activities.update(dragon_bone_activities)
+
+ashes_activities = {
+    "impious_ashes": 40,
+    "infernal_ashes": 625,
+    "tortured_ashes": 900,
+    "searing_ashes": 2000,
+}
+
+
+prayer_activities = {}
+prayer_activities.update(bone_activities)
+prayer_activities.update(ashes_activities)
+
 activities = {}
-activities.update(wc_activities)
+# activities.update(wc_activities)
 # activities.update(fishing_activities)
 # activities.update(mining_activities)
 # activities.update(summoning_activites)
 # activities.update(arch_activities)
 # activities.update(firemaking_activities)
 # activities.update(crafting_activites)
+activities.update(prayer_activities)
+
+# store the mutually exclusive boosts as an edge list for validation
+# if any of these turn out to be false, both boosts need to be re-placed into the model with new experiments
+# tested around April 2022, any amount of updates could render any of this untrue
+mutually_exclusive_boosts_edge_list = {
+    ("crystallise", "portable"),  # can't crystallize a portable
+    ("crystallise", "focus"),  # can't crystallise and summoning
+    ("crystallise", "shared"),  # can't crystallise a div loc
+    ("shared", "focus"),  # can't div loc summoning
+    ("shared", "vos"),  # vos doesn't affect div locs
+    ("shared", "portable"),  # can't put div locs into a portable
+    ("portable", "focus"),  # you wouldn't summon a portable
+    ("ectofuntus", "yak_track"),  # ectofuntus not in prif
+    ("ectofuntus", "vos"),  # ectofuntus not in prif
+    ("ectofuntus", "portable"),  # ectofuntus not a portable
+    ("ectofuntus", "crystallise"),  # can't crystallise the ectofuntus
+    ("ectofuntus", "shared"),  # ectofuntus not a div loc
+    ("ectofuntus", "premier"),  # premier turns off all ecto/altar buffs?
+    ("powder", "yak_track"),  # yak track does not work with powder
+    ("powder", "vos"),  # vos doesn't affect bone burial
+    ("powder", "portable"),  # can't bury bones in a portable
+    ("powder", "crystallise"),  # can't crystallise the bones
+    ("powder", "shared"),  # bones are not a div loc
+    ("gilded_altar", "yak_track"),  # yak_track doesn't work with altar
+    ("gilded_altar", "vos"),  # altar not in prif
+    ("gilded_altar", "portable"),  # altar is not a portable
+    ("gilded_altar", "crystallise"),  # can't crystallise the altar
+    ("gilded_altar", "shared"),  # altar is not a div loc
+    ("chaos_altar", "yak_track"),  # yak_track doesn't work with altar
+    ("chaos_altar", "vos"),  # chaos altar not in prif
+    ("chaos_altar", "portable"),  # altar is not a portable
+    ("chaos_altar", "crystallise"),  # can't crystallise the altar
+    ("chaos_altar", "shared"),  # altar is not a div loc
+    ("sanctifier", "yak_track"),  # yak_track doesn't work with sanctifier
+    ("sanctifier", "vos"),  # vos doesn't affect bone burying
+    ("sanctifier", "portable"),  # can't bury bones with a portable
+    ("sanctifier", "crystallise"),  # can't crystallise the bones
+    ("sanctifier", "shared"),  # no bone div loc
+}
+
+# for compactness, some fully connected subgraphs of the mutually exclusive boost graph are represented here as sets
+# each set represents a group of boosts that are totally mutually exclusive with each other
+mutually_exclusive_boosts_fully_connected_subgraphs = [
+    {"wisdom", "scabaras", "prime", "wisdom", "prayer_aura"},  # worn aura slot
+    {"worn_cinder", "worn_pulse", "sanctifier"},  # pocket slot
+    {"ectofuntus", "powder", "gilded_altar", "chaos_altar", "sanctifier"}  # prayer base multipliers
+]
+
 
 # vos/focus order currently unknowable due to each being 20%
-# crystallise is mutex with portable, focus, shared
-# shared is mutex with focus, vos, portable, crystallise
-# portable is mutex with each focus, shared, crystallise
-# focus is mutex with crystallise, portable, shared
-# shared is mutex with crystallise, portable, focus
 # vos proven to come before portable and crystallise
+# prayer auras are all 3 proven to be in the same spot
 sota_model = dict(
-    base=[["vos"], ["crystallise"], ["portable"], ["focus"], ["shared"]],
+    base=[["vos"], ["crystallise"], ["portable"], ["focus"], ["shared"], ["ectofuntus", "powder", "gilded_altar", "chaos_altar", "sanctifier", "dragon_rider"]],
     additive=[["yak_track", "prime", "scabaras", "bomb"]],
     chain1=[["worn_pulse"], ["pulse"], ["sceptre"], ["coin"], ["torstol"]],
-    chain2=[["wise", "outfit", "premier", "inspire"], ["wisdom"], ["brawlers"]],
+    chain2=[["wise", "outfit", "premier", "inspire"], ["wisdom", "prayer_aura"], ["brawlers"]],
     chain3=[],
     multiplicative=[["avatar"]],
     bonus=[["worn_cinder"], ["cinder"]],
 )
 
 test_model = dict(
-    base=[["vos"], ["crystallise"], ["portable"], ["focus"], ["shared"]],
+    base=[["vos"], ["crystallise"], ["portable"], ["focus"], ["shared"], ["ectofuntus", "powder", "gilded_altar", "chaos_altar", "sanctifier", "dragon_rider"]],
     additive=[["yak_track", "prime", "scabaras", "bomb"]],
     chain1=[["worn_pulse"], ["pulse"], ["sceptre"], ["coin"], ["torstol"]],
-    chain2=[["wise", "outfit", "premier", "inspire"], ["wisdom"], ["brawlers"]],
+    chain2=[["wise", "outfit", "premier", "inspire"], ["wisdom", "prayer_aura"], ["brawlers"]],
     chain3=[],
     multiplicative=[["avatar"]],
     bonus=[["worn_cinder"], ["cinder"]],
 )
 
 counting_model = dict(first=[])
-
-
 
 
 # iterables that when product-ed together will produce all boost combinations
@@ -383,26 +461,33 @@ general_boost_iterables = dict(
     torstol=[*inclusive_range(0, 20, 5)],
     outfit=[*inclusive_range(0, 60, 10)],
     avatar=[0, *inclusive_range(30, 60, 10)],
-    yak_track=[*inclusive_range(0, 200, 100)],
-    wisdom=[*inclusive_range(0, 25, 25)],
-    bxp=[*inclusive_range(0, 1000, 1000)],
-    premier=[*inclusive_range(0, 100, 100)],
-    scabaras=[*inclusive_range(0, 100, 100)],
-    prime=[0, *inclusive_range(100, 1000, 900)],
+    yak_track=[0, 100, 200],
+    wisdom=[0, 25],
+    bxp=[0, 1000],
+    premier=[0, 100],
+    scabaras=[0, 100],
+    prime=[0, 100, 1000],
     pulse=[*inclusive_range(0, 100, 20)],
-    worn_pulse=[*inclusive_range(0, 500, 500)],
+    worn_pulse=[0, 500],
     cinder=[*inclusive_range(0, 100, 20)],
-    worn_cinder=[*inclusive_range(0, 1500, 1500)],
-    vos=[*inclusive_range(0, 200, 200)],
-    coin=[*inclusive_range(0, 20, 10)],
-    sceptre=[*inclusive_range(0, 40, 20)],
-    inspire=[*inclusive_range(0, 20, 20)],
-    focus=[*inclusive_range(0, 200, 200)],
-    shared=[*inclusive_range(0, 250, 250)],
-    brawlers=[0, *inclusive_range(500, 3000, 2500)],
-    bomb=[*inclusive_range(0, 500, 500)],
-    portable=[*inclusive_range(0, 100, 100)],
+    worn_cinder=[0, 1500],
+    vos=[0, 200],
+    coin=[0, 10, 20],
+    sceptre=[0, 20, 40],
+    inspire=[0, 20],
+    focus=[0, 200],
+    shared=[0, 250],
+    brawlers=[0, 500, 3000],
+    bomb=[0, 500],
+    portable=[0, 100],
     crystallise=[0, 200, 400, 500, 875],
+    ectofuntus=[0, 3000],
+    powder=[0, 2500],
+    gilded_altar=[0, 1500, 2000, 2500],
+    chaos_altar=[0, 2500],
+    sanctifier=[0, 2500],
+    prayer_aura=[0, *inclusive_range(10, 25, 5)],
+    dragon_rider=[0, 1000],
 )
 
 # each boost lists the order in which their state is the most to least preferable, for experiment design
@@ -434,15 +519,22 @@ boost_preferences = dict(
     focus=[0, 200],
     shared=[0, 250],
     crystallise=[0, 200, 400, 500, 875],  # 500(875) when wc/fish/hunt, 200(400) mining (light form)
+    ectofuntus=[0, 3000],
+    gilded_altar=[0, 1500, 2000, 2500],
+    chaos_altar=[0, 2500],
+    sanctifier=[0, 2500],
+    powder=[0, 2500],
+    prayer_aura=[0, 15, 25, 20, 10],
+    dragon_rider=[0, 1000],
 )
 
-# states for which I am currently unable to test for various reasons
-boost_invalids = dict(
-    outfit=[10, 20, 30, 40, 50, 60],  # 4 piece outfit
+# boost states that are currently unavailable to experimental design
+invalid_boosts = dict(
+    # outfit=[40, 60],  # 4 piece outfit
     avatar=[50, 40, 30],  # avatar bonus only 60 or 0 if max fealty
     yak_track=[0, 100],  # can't toggle yak track
     bxp=[1000],
-    premier=[100],
+    # premier=[100],
     coin=[20, 0],
     sceptre=[40, 0],
     worn_pulse=[500],
@@ -451,27 +543,45 @@ boost_invalids = dict(
     # cinder=[100,20,40,60,80]
     # wisdom=[0],
     inspire=[20],
+    prayer_aura=[25, 20, 10]
 )
 
 
-# return false if an impossible boost state is defined
-# add more rules here if it suggests an experiment with a boost combination that's not possible (e.g. same slot)
-def validate_boost_amts(boost_amts):
+def get_boost_on_default_dict(boost_vals):
     boost_on = defaultdict(int)
     boost_on.update(
-        map(lambda boost_amt_entry: (boost_amt_entry[0], boost_amt_entry[1] > 0), boost_amts.items()))
-    # mutually exclusive (worn aura slot)
-    if (boost_on["wisdom"] and boost_on["scabaras"]) or (boost_on["scabaras"] and boost_on["prime"]) or (
-            boost_on["prime"] and boost_on["wisdom"]):
+        map(lambda boost_val_entry: (boost_val_entry[0], boost_val_entry[1] > 0), boost_vals.items()))
+    return boost_on
+
+
+
+def get_list_of_boosts_on(boost_on_default_dict):
+    return list(map(lambda boost_item: boost_item[0], filter(lambda boost_item: boost_item[1], boost_on_default_dict.items())))
+
+
+# function to quickly test a mutex
+def validate_mutex_set(mutex_set, inclusion_dict):
+    count = 0
+    for field in mutex_set:
+        if inclusion_dict[field]:
+            count += 1
+            if count > 1:
+                return False
+    return True
+
+
+# return false if an impossible boost state is defined
+def validate_boost_vals(boost_vals, mutex_boost_edge_list, mutex_boost_clique_list):
+    boost_on = get_boost_on_default_dict(boost_vals)
+    boosts_on = get_boost_on_default_dict(boost_on)
+    if not all(not all(boost_on[boost] for boost in edge) for edge in mutex_boost_edge_list):
         return False
-    # mutually exclusive (pocket slot)
-    if boost_on["worn_cinder"] > 0 and boost_on["worn_pulse"] > 0:
+
+    if not all(validate_mutex_set(mutex_set, boost_on) for mutex_set in mutex_boost_clique_list):
         return False
-    # can't use shared knowledge or summoning focus with portables
-    if boost_on["portable"] and (boost_on["shared"] or boost_on["focus"]):
-        return False
-    # can't use shared knowledge with focus or vos
-    if boost_on["shared"] and (boost_on["focus"] or boost_on["vos"]):
+
+    # ectofuntus doesn't stack with anything at all, not even really a boost
+    if boost_on['ectofuntus'] and len(boosts_on) > 1:
         return False
     return True
 
@@ -481,11 +591,11 @@ def validate_boost_amts(boost_amts):
 def validate_experiment(experiment):
     activity_name = experiment['activity'][0]
     boost_on = defaultdict(int)
-    boost_amts_ = experiment['boost_amts']
+    boost_vals_ = experiment['boost_vals']
     boost_on.update(
-        map(lambda boost_amt_entry: (boost_amt_entry[0], boost_amt_entry[1] > 0), boost_amts_.items()))
+        map(lambda boost_val_entry: (boost_val_entry[0], boost_val_entry[1] > 0), boost_vals_.items()))
     # voice of seren can only effect yew and magic trees, summoning
-    if boost_on["vos"] and activity_name not in ["yew", "magic", "ivy"] + list(
+    if boost_on["vos"] and activity_name not in ["wc_yew", "wc_magic", "wc_ivy"] + list(
             summoning_activites.keys()):
         return False
     # yak track doesn't apply for artefact restoration
@@ -495,24 +605,18 @@ def validate_experiment(experiment):
     if boost_on["focus"] and activity_name not in summoning_activites.keys():
         return False
     if boost_on["crystallise"] \
-            and ((boost_amts_["crystallise"] in [500, 875] and activity_name not in list(chain(wc_activities, fishing_activities, hunter_activities)))  # fish/hunt too
-                 or (boost_amts_["crystallise"] in [200, 400] and activity_name not in mining_activities)):
+            and ((boost_vals_["crystallise"] in [500, 875] and activity_name not in list(chain(wc_activities, fishing_activities, hunter_activities)))  # fish/hunt too
+                 or (boost_vals_["crystallise"] in [200, 400] and activity_name not in mining_activities)):
+        return False
+    if boost_on["ectofuntus"] and activity_name not in prayer_activities:
         return False
     return True
 
 
-
-run_individual_point_test = False
-# base xp for singular data point tests
-test_base_xp = wc_activities["wc_yew"]
-# None to show all successor models
-expected = None
-
-
-# number of fields greatly increases search space, >A083355(n)
-# ['ectofuntus', 'prayer_aura', 'dragon_gloves', 'runecrafting_gloves', 'god_potion', 'bonfire', 'dxp', 'furnace']
+# number of fields searched at once greatly increases search space, >A083355(n)
+# ['runecrafting_gloves', 'god_potion', 'bonfire', 'dxp', 'furnace', 'brassica']
 # fields_to_add = []
-fields_to_add = ["crystallise"]
+fields_to_add = []
 allowed_failures = 0
 data_filename = 'data.csv'
 
@@ -528,12 +632,13 @@ print("Filtering data that uses boosts we aren't currently tracking: {}".format(
 
 
 test_filtered_points = list(filter_data_points(tracked_fields, data_points))
-print("{} data points remaining after filtering".format(len(test_filtered_points)))
-[print(data_point) for data_point in test_filtered_points]
+print("{} data points remaining after filtering, showing last 10:".format(len(test_filtered_points)))
+[print(data_point) for data_point in test_filtered_points[-10:]]
 
 fields_without_data = get_fields_without_data(tracked_fields, test_filtered_points)
 # if len(fields_without_data) > 1 or (len(fields_without_data) > 0 and "bxp" not in fields_without_data):
-#     raise Exception("Fields {} have no data for the current filtering, data points containing only the boosts {}".format(fields_without_data, tracked_fields))
+#     raise Exception("Fields {} have no data for the current filtering, data points containing only the boosts {}"
+#       .format(fields_without_data, tracked_fields))
 
 print('Generating and testing successor models by adding {}...'.format(fields_to_add))
 all_successors = get_successors(test_model, fields_to_add)
@@ -543,7 +648,7 @@ print("candiate_models = [\n"+",\n".join([model_to_string(model, 4) for model in
 
 
 sota_fields = list(get_model_fields(sota_model))
-print("Filtering data that uses boosts not in the sota model: {}".format(sota_fields))
+print("Filtering data that uses boosts not in the sota model: {}".format(sota_fields + fields_to_add))
 sota_test_filtered_points = list(filter_data_points(sota_fields, data_points))
 error_points = get_contradictory_test_points(sota_model, sota_test_filtered_points)
 print('{}/{} contradictory samples calculated with sota model, printing...'.format(len(error_points), len(sota_test_filtered_points)))
@@ -582,9 +687,8 @@ def boost_iterables_to_boost_value_tuples(boost_iterables):
 
 def boost_value_product_to_boost_vals_dict(boost_value_product):
     for boost_value_tuples in boost_value_product:
-        boost_amts = dict(boost_value_tuples)
-        if validate_boost_amts(boost_amts):
-            yield boost_amts
+        boost_vals = dict(boost_value_tuples)
+        yield boost_vals
 
 
 def count_iterable(it):
@@ -594,7 +698,7 @@ def count_iterable(it):
 # generate all valid boost combinations given a boost to iterable of values map
 # and a similar boost to value map of currently impossible values
 # also pass in the per_boost_depth to only calculate combinations based on the nth most preferred boost values per boost
-def generate_valid_boost_combinations(boost_iterables, invalid_boost_values, tracked_boosts, per_boost_depth=0):
+def generate_boost_combinations(boost_iterables, invalid_boost_values, tracked_boosts, per_boost_depth=0):
     boosts_less_invalids = copy.deepcopy(boost_iterables)
     for boost in list(boosts_less_invalids.keys()):
         if boost not in tracked_boosts:
@@ -609,23 +713,50 @@ def generate_valid_boost_combinations(boost_iterables, invalid_boost_values, tra
     return boost_value_product_to_boost_vals_dict(boost_value_product)
 
 
+def data_point_to_string_with_calculation(data_point, model, indent=0):
+    return_strings = data_point_to_strings(data_point)
+    return_strings.insert(2, "Calculated: {}".format(format_xp_tuple(calculate_data_point_xp(model, data_point))))
+    return textwrap.indent("\n".join(return_strings), " " * indent)
+
+
+def data_point_to_strings(data_point):
+    xp_vals = data_point['xp_vals']
+    return_strings = ["Base: {} xp".format(format_xp_int(xp_vals["base"], False)),
+                      "Observed: {}".format(format_xp_tuple((xp_vals["xp"], xp_vals["(bonus)"]))),
+                      "Boosts: {}".format(boost_vals_to_string(data_point["boost_vals"]))]
+    return return_strings
+
+
+def data_point_to_string(data_point, indent=0):
+    return "\n".join(data_point_to_strings(data_point))
+
+
+def boost_vals_to_string(boost_vals):
+    return json.dumps(dict(filter(lambda entry: entry[1] > 0, boost_vals.items())), indent=4)
+
+
 if len(successful_models) > 1:
-    print("Attempting to narrow down the {} valid candidate models by generating you an experiment".format(len(successful_models)))
-    print("Score is in the range of {}-0, with lower being better".format(len(successful_models)-1))
+    print("Attempting to narrow down the {} valid candidate models by generating you an experiment".format(
+        len(successful_models)))
+    print("Score is in the range of {}-0, with lower being better".format(len(successful_models) - 1))
     # generate all possible boost levels
-    boost_combinations = generate_valid_boost_combinations(boost_preferences, boost_invalids, tracked_fields, 2)
+    boost_combinations = generate_boost_combinations(boost_preferences, invalid_boosts, tracked_fields, 3)
+    # filter out boost combinations for which mutual exclusion rules have been violated
+    boost_combinations = filter(lambda boost_vals: validate_boost_vals(boost_vals, mutually_exclusive_boosts_edge_list,
+                                                                       mutually_exclusive_boosts_fully_connected_subgraphs),
+                                boost_combinations)
     experiments_product = product(boost_combinations, activities.items())
-    experiment_dicts = (dict(activity=activity, boost_amts=boost_amts) for boost_amts, activity in experiments_product)
+    experiment_dicts = (dict(activity=activity, boost_vals=boost_vals) for boost_vals, activity in experiments_product)
     experiment_dicts = filter(validate_experiment, experiment_dicts)
 
     min_score = len(successful_models)-1
     experiment = {}
     for experiment_dict in experiment_dicts:
-        boost_amts = experiment_dict["boost_amts"]
+        boost_vals = experiment_dict["boost_vals"]
         activity_xp = experiment_dict["activity"][1]
         model_xps = {}
         for model in successful_models:
-            xp_tuple = get_xp(activity_xp, model, boost_amts)
+            xp_tuple = get_xp(activity_xp, model, boost_vals)
             model_xps[xp_tuple] = (1 if xp_tuple not in model_xps else (model_xps[xp_tuple] + 1))
         # a lower score means the experiments have a larger amount of different outcomes across models
         score = sum(map(lambda count: count-1, model_xps.values()))
@@ -635,12 +766,12 @@ if len(successful_models) > 1:
             print("score:", score, experiment)
 
     if experiment:
-        test_point_successors = [(get_xp(experiment["activity"][1], model, experiment['boost_amts']), model) for model in successful_models]
+        test_point_successors = [(get_xp(experiment["activity"][1], model, experiment['boost_vals']), model) for model in successful_models]
         print('xp values from "best" experiment')
         [print(test_point_successor) for test_point_successor in test_point_successors]
         print("Perform this experiment:")
         print(json.dumps(experiment["activity"]))
-        print(json.dumps(dict(filter(lambda entry: entry[1] > 0, experiment['boost_amts'].items())), indent=1))
+        print(boost_vals_to_string(experiment['boost_vals'], 1))
     else:
         print("No experiments found to help narrow down the {} remaining models".format(len(successful_models)))
 else:
@@ -651,4 +782,36 @@ biggest_point = max(data_points, key=lambda point: len(list(filter(lambda value:
 print(json.dumps(biggest_point))
 
 print("Lua version of the sota model:")
-print(model_to_program(sota_model, general_boost_iterables, biggest_point))
+print(model_to_program(sota_model, general_boost_iterables, data_points[-1]))
+
+print("Last recorded data point:")
+[print(data_point_to_string_with_calculation(data_point, sota_model)) for data_point in data_points[-1:]]
+print()
+
+if len(error_points) > 0:
+    print("Error points > 1, taking most recently added error point and attempting to remove boosts until it works.")
+    # remove boosts from boost_vals and test whether we get a number
+    # useful for determining if we need to exclude certain boosts to make a model valid
+    data_point = error_points[-1:][0]  # usually the most recent point anyway
+
+    print("Point in question:")
+    print(data_point_to_string_with_calculation(data_point, sota_model))
+
+    data_point_boost_vals = data_point["boost_vals"]
+    boost_powerset = powerset(get_list_of_boosts_on(get_boost_on_default_dict(data_point_boost_vals)))
+    valid_data_point_reductions = []
+    for reduced_boost_set_names in boost_powerset:
+        reduced_data_point = copy.deepcopy(data_point)
+        reduced_data_point_boost_vals = reduced_data_point["boost_vals"]
+        for boost_name in data_point_boost_vals.keys():
+            if boost_name not in reduced_boost_set_names:
+                reduced_data_point_boost_vals[boost_name] = 0
+        if test_data_point(sota_model, reduced_data_point):
+            valid_data_point_reductions.append(reduced_data_point)
+
+    if len(valid_data_point_reductions) > 0:
+        print("These data points are valid reductions of the most recent error point:")
+        for reduced_data_point in valid_data_point_reductions:
+            print(data_point_to_string_with_calculation(reduced_data_point, sota_model))
+    else:
+        print("No reductions of the most recent error datapoint can explain the error.")

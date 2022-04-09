@@ -1,15 +1,15 @@
-xp	(bonus)	base	bxp	dxp	bomb	yak_track	torstol	premier	avatar	worn_pulse	pulse	worn_cinder	cinder	sceptre	coin	outfit	raf	aura	wise	shared	vos	brawlers	inspire	wisdom	scabaras	prime	focus	portable	crystallise
-175.0		175.0
-210.0		175.0				0.2
-218.7		175.0				0.2			0.05
-211.7		175.0				0.2									0.01
+xp	(bonus)	base	bxp	dxp	bomb	yak_track	torstol	premier	avatar	worn_pulse	pulse	worn_cinder	cinder	sceptre	coin	outfit	raf	prayer_aura	wise	shared	vos	brawlers	inspire	wisdom	scabaras	prime	focus	portable	crystallise	ectofuntus	powder	gilded_altar	chaos_altar	sanctifier	dragon_rider
+175.0	0.0	175.0
+210.0	35.0	175.0				0.2
+218.7	43.7	175.0				0.2			0.05
+211.7	36.7	175.0				0.2									0.01
 213.5	38.5	175.0				0.2										0.02
 217.0	42.0	175.0				0.2													0.04
 226.1	51.1	175.0				0.2			0.05										0.04
 271.3	61.3	175.0				0.2			0.05										0.04		0.2
-218.7		175.0				0.2									0.01				0.04
-262.5		175.0				0.2									0.01				0.04		0.2
-273.5		175.0				0.2			0.05						0.01				0.04		0.2
+218.7	43.7	175.0				0.2									0.01				0.04
+262.5	52.5	175.0				0.2									0.01				0.04		0.2
+273.5	63.5	175.0				0.2			0.05						0.01				0.04		0.2
 229.7	54.7	175.0				0.2	0.02		0.05										0.04
 280.1	70.1	175.0				0.2	0.02		0.05							0.02			0.04		0.2
 275.7	65.7	175.0				0.2	0.02		0.05										0.04		0.2
@@ -190,3 +190,13 @@ xp	(bonus)	base	bxp	dxp	bomb	yak_track	torstol	premier	avatar	worn_pulse	pulse	w
 1042.3	648.6	175.0	1			0.2			0.06		0.1		0.1								0.2								0.875
 1224.8	774.8	250.0	1			0.2			0.06		0.1		0.1	0.02	0.01						0.2								0.5
 1531.0	968.5	250.0	1			0.2			0.06		0.1		0.1	0.02	0.01						0.2								0.875
+288.0	0.0	72.0																												3
+544.8	292.8	72.0	1						0.06					0.02																	2.5
+1295.0	1043.0	72.0	1				0.005	0.1	0.06		0.08	1.5	0.08			0.06			0.04						0.1						2.5
+867.6	615.6	72.0	1				0.005		0.06							0.04			0.04			0.5									2.5
+2309.8	2057.8	72.0	1				0.005		0.06							0.04			0.04			3									2.5
+2343.8	2091.8	72.0	1				0.005		0.06							0.04		0.015	0.04			3									2.5
+580.8	400.8	72.0	1						0.06									0.015				0.5										1.5
+563.6	311.6	72.0	1						0.06									0.015	0.04														2.5
+563.6	311.6	72.0	1						0.06									0.015	0.04															2.5
+1336.2	1192.2	72.0	1			0.2	0.005		0.06							0.04			0.03			3													1
