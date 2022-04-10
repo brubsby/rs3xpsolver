@@ -1,4 +1,4 @@
-xp	(bonus)	base	bxp	dxp	bomb	yak_track	torstol	premier	avatar	worn_pulse	pulse	worn_cinder	cinder	sceptre	coin	outfit	raf	prayer_aura	wise	shared	vos	brawlers	inspire	wisdom	scabaras	prime	focus	portable	crystallise	ectofuntus	powder	gilded_altar	chaos_altar	sanctifier	dragon_rider
+xp	(bonus)	base	bxp	dxp	bomb	yak_track	torstol	premier	avatar	worn_pulse	pulse	worn_cinder	cinder	sceptre	coin	outfit	raf	prayer_aura	wise	shared	vos	brawlers	inspire	wisdom	scabaras	prime	focus	portable	crystallise	ectofuntus	powder	gilded_altar	chaos_altar	sanctifier	dragon_rider	demonic_skull_rc	demonic_skull
 175.0	0.0	175.0
 210.0	35.0	175.0				0.2
 218.7	43.7	175.0				0.2			0.05
@@ -199,4 +199,6 @@ xp	(bonus)	base	bxp	dxp	bomb	yak_track	torstol	premier	avatar	worn_pulse	pulse	w
 580.8	400.8	72.0	1						0.06									0.015				0.5										1.5
 563.6	311.6	72.0	1						0.06									0.015	0.04														2.5
 563.6	311.6	72.0	1						0.06									0.015	0.04															2.5
-1336.2	1192.2	72.0	1			0.2	0.005		0.06							0.04			0.03			3													1
+1336.2	1192.2	72.0	1			0.2	0.005		0.06							0.03			0.04			3													1
+22.7	16.7	6.0				0.2	0.005		0.06										0.04																	2.5
+212.6	131.2	81.4	1			0.2	0.01		0.06										0.04																		0.2

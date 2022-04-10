@@ -95,6 +95,17 @@ def filter_data_points(fields_to_filter, data_points):
                        data_points)
 
 
+# collect the boost names that appear in the data but not in the provided list
+def get_data_points_boost_complement(fields_to_complement, data_points):
+    appearing_fields = set()
+    for data_point in data_points:
+        for boost_name, boost_val in data_point['boost_vals'].items():
+            if boost_val > 0:
+                appearing_fields.add(boost_name)
+    return list(appearing_fields - set(fields_to_complement))
+
+
+
 def get_fields_without_data(fields_to_verify, data_points):
     field_set = set(fields_to_verify)
     for data_point in data_points:
@@ -276,7 +287,9 @@ end
 """.format(variables_string, model_string)
 
 
-# base xp amounts that might prove useful
+# activity base xps stored in this manner to assist experiment generation and writing of boost mutual exclusion rules
+# obviously not a complete list, feel free to add more activities if you're attempting to place a boost that has no
+# valid experiments
 wc_activities = {
     "wc_yew": 1750,
     "wc_magic": 2500,
@@ -345,7 +358,6 @@ dragon_bone_activities = {
     "frost_dragon_bones": 1800,
     "reinforced_dragon_bones": 1900,
 }
-
 bone_activities = {
     "bones": 45,
     "big_bones": 150,
@@ -355,20 +367,36 @@ bone_activities = {
     "ourg_bones": 1400,
     "dinosaur_bones": 1700,
 }
-
 bone_activities.update(dragon_bone_activities)
-
 ashes_activities = {
     "impious_ashes": 40,
     "infernal_ashes": 625,
     "tortured_ashes": 900,
     "searing_ashes": 2000,
 }
-
-
 prayer_activities = {}
 prayer_activities.update(bone_activities)
 prayer_activities.update(ashes_activities)
+
+abyss_rc_activities = {
+    "air_rune": 5,
+    "mind_rune": 5.5,
+    "water_rune": 6,
+    "earth_rune": 6.5,
+    "fire_rune": 7,
+    "body_rune:": 7.5,
+    "cosmic_rune": 8,
+    "chaos_rune": 8.5,
+    "nature_rune": 9,
+    "law_rune": 9.5,
+    "death_rune": 10,
+    "blood_rune": 10.5,
+    "soul_rune": 275,
+}
+rc_activities = {
+    "astral_rune": 8.7,
+}
+rc_activities.update(abyss_rc_activities)
 
 activities = {}
 # activities.update(wc_activities)
@@ -379,79 +407,6 @@ activities = {}
 # activities.update(firemaking_activities)
 # activities.update(crafting_activites)
 activities.update(prayer_activities)
-
-# store the mutually exclusive boosts as an edge list for validation
-# if any of these turn out to be false, both boosts need to be re-placed into the model with new experiments
-# tested around April 2022, any amount of updates could render any of this untrue
-mutually_exclusive_boosts_edge_list = {
-    ("crystallise", "portable"),  # can't crystallize a portable
-    ("crystallise", "focus"),  # can't crystallise and summoning
-    ("crystallise", "shared"),  # can't crystallise a div loc
-    ("shared", "focus"),  # can't div loc summoning
-    ("shared", "vos"),  # vos doesn't affect div locs
-    ("shared", "portable"),  # can't put div locs into a portable
-    ("portable", "focus"),  # you wouldn't summon a portable
-    ("ectofuntus", "yak_track"),  # ectofuntus not in prif
-    ("ectofuntus", "vos"),  # ectofuntus not in prif
-    ("ectofuntus", "portable"),  # ectofuntus not a portable
-    ("ectofuntus", "crystallise"),  # can't crystallise the ectofuntus
-    ("ectofuntus", "shared"),  # ectofuntus not a div loc
-    ("ectofuntus", "premier"),  # premier turns off all ecto/altar buffs?
-    ("powder", "yak_track"),  # yak track does not work with powder
-    ("powder", "vos"),  # vos doesn't affect bone burial
-    ("powder", "portable"),  # can't bury bones in a portable
-    ("powder", "crystallise"),  # can't crystallise the bones
-    ("powder", "shared"),  # bones are not a div loc
-    ("gilded_altar", "yak_track"),  # yak_track doesn't work with altar
-    ("gilded_altar", "vos"),  # altar not in prif
-    ("gilded_altar", "portable"),  # altar is not a portable
-    ("gilded_altar", "crystallise"),  # can't crystallise the altar
-    ("gilded_altar", "shared"),  # altar is not a div loc
-    ("chaos_altar", "yak_track"),  # yak_track doesn't work with altar
-    ("chaos_altar", "vos"),  # chaos altar not in prif
-    ("chaos_altar", "portable"),  # altar is not a portable
-    ("chaos_altar", "crystallise"),  # can't crystallise the altar
-    ("chaos_altar", "shared"),  # altar is not a div loc
-    ("sanctifier", "yak_track"),  # yak_track doesn't work with sanctifier
-    ("sanctifier", "vos"),  # vos doesn't affect bone burying
-    ("sanctifier", "portable"),  # can't bury bones with a portable
-    ("sanctifier", "crystallise"),  # can't crystallise the bones
-    ("sanctifier", "shared"),  # no bone div loc
-}
-
-# for compactness, some fully connected subgraphs of the mutually exclusive boost graph are represented here as sets
-# each set represents a group of boosts that are totally mutually exclusive with each other
-mutually_exclusive_boosts_fully_connected_subgraphs = [
-    {"wisdom", "scabaras", "prime", "wisdom", "prayer_aura"},  # worn aura slot
-    {"worn_cinder", "worn_pulse", "sanctifier"},  # pocket slot
-    {"ectofuntus", "powder", "gilded_altar", "chaos_altar", "sanctifier"}  # prayer base multipliers
-]
-
-
-# vos/focus order currently unknowable due to each being 20%
-# vos proven to come before portable and crystallise
-# prayer auras are all 3 proven to be in the same spot
-sota_model = dict(
-    base=[["vos"], ["crystallise"], ["portable"], ["focus"], ["shared"], ["ectofuntus", "powder", "gilded_altar", "chaos_altar", "sanctifier", "dragon_rider"]],
-    additive=[["yak_track", "prime", "scabaras", "bomb"]],
-    chain1=[["worn_pulse"], ["pulse"], ["sceptre"], ["coin"], ["torstol"]],
-    chain2=[["wise", "outfit", "premier", "inspire"], ["wisdom", "prayer_aura"], ["brawlers"]],
-    chain3=[],
-    multiplicative=[["avatar"]],
-    bonus=[["worn_cinder"], ["cinder"]],
-)
-
-test_model = dict(
-    base=[["vos"], ["crystallise"], ["portable"], ["focus"], ["shared"], ["ectofuntus", "powder", "gilded_altar", "chaos_altar", "sanctifier", "dragon_rider"]],
-    additive=[["yak_track", "prime", "scabaras", "bomb"]],
-    chain1=[["worn_pulse"], ["pulse"], ["sceptre"], ["coin"], ["torstol"]],
-    chain2=[["wise", "outfit", "premier", "inspire"], ["wisdom", "prayer_aura"], ["brawlers"]],
-    chain3=[],
-    multiplicative=[["avatar"]],
-    bonus=[["worn_cinder"], ["cinder"]],
-)
-
-counting_model = dict(first=[])
 
 
 # iterables that when product-ed together will produce all boost combinations
@@ -488,6 +443,8 @@ general_boost_iterables = dict(
     sanctifier=[0, 2500],
     prayer_aura=[0, *inclusive_range(10, 25, 5)],
     dragon_rider=[0, 1000],
+    demonic_skull=[0, 250, *inclusive_range(40, 2960, 40)],
+    demonic_skull_rc=[0, 250, *inclusive_range(40, 2960, 40)],
 )
 
 # each boost lists the order in which their state is the most to least preferable, for experiment design
@@ -526,6 +483,9 @@ boost_preferences = dict(
     powder=[0, 2500],
     prayer_aura=[0, 15, 25, 20, 10],
     dragon_rider=[0, 1000],
+    # ranges are all wildy agility
+    demonic_skull=[0, 250, 2960, 200, *range(40, 200, 40), *range(240, 2960, 40)],
+    demonic_skull_rc=[0, 250, 2960, 200, *range(40, 200, 40), *range(240, 2960, 40)],
 )
 
 # boost states that are currently unavailable to experimental design
@@ -543,7 +503,9 @@ invalid_boosts = dict(
     # cinder=[100,20,40,60,80]
     # wisdom=[0],
     inspire=[20],
-    prayer_aura=[25, 20, 10]
+    prayer_aura=[25, 20, 10],
+    demonic_skull=[*range(40, 200, 40), *range(240, 2960, 40)],
+    demonic_skull_rc=[*range(40, 200, 40), *range(240, 2960, 40)],
 )
 
 
@@ -604,52 +566,153 @@ def validate_experiment(experiment):
     # can't use summoning focus on anything other than summoning
     if boost_on["focus"] and activity_name not in summoning_activites.keys():
         return False
+    # crystallise boost level specific to activities
     if boost_on["crystallise"] \
             and ((boost_vals_["crystallise"] in [500, 875] and activity_name not in list(chain(wc_activities, fishing_activities, hunter_activities)))  # fish/hunt too
                  or (boost_vals_["crystallise"] in [200, 400] and activity_name not in mining_activities)):
         return False
     if boost_on["ectofuntus"] and activity_name not in prayer_activities:
         return False
+    if boost_on["demonic_skull"] \
+            and ((boost_vals_["demonic_skull"] == 2500 and
+                  activity_name not in list(chain(abyss_rc_activities, ["wilderness_agility"])))
+                 or (boost_vals_["demonic_skull"] == 200 and
+                     activity_name not in ["wilderness_agility"])  # slayer/farming/hunter/divination in the wildy
+                 or (boost_vals_["demonic_skull"] in set(inclusive_range(40, 2960, 40)) and
+                     activity_name not in ["wilderness_agility"])):
+        return False
     return True
 
 
+
+
+# store the mutually exclusive boosts as an edge list for validation
+# if any of these turn out to be false, both boosts need to be re-placed into the model with new experiments
+# tested around April 2022, any amount of updates could render any of this untrue
+mutually_exclusive_boosts_edge_list = {
+    # base boosts
+    ("crystallise", "portable"),  # can't crystallize a portable
+    ("crystallise", "focus"),  # can't crystallise and summoning
+    ("crystallise", "shared"),  # can't crystallise a div loc
+    ("shared", "focus"),  # can't div loc summoning
+    ("shared", "vos"),  # vos doesn't affect div locs
+    ("shared", "portable"),  # can't put div locs into a portable
+    ("portable", "focus"),  # you wouldn't summon a portable
+    # prayer
+    ("ectofuntus", "yak_track"),  # ectofuntus not in prif
+    ("ectofuntus", "vos"),  # ectofuntus not in prif
+    ("ectofuntus", "portable"),  # ectofuntus not a portable
+    ("ectofuntus", "crystallise"),  # can't crystallise the ectofuntus
+    ("ectofuntus", "shared"),  # ectofuntus not a div loc
+    ("ectofuntus", "premier"),  # premier turns off all ecto/altar buffs?
+    ("powder", "yak_track"),  # yak track does not work with powder
+    ("powder", "vos"),  # vos doesn't affect bone burial
+    ("powder", "portable"),  # can't bury bones in a portable
+    ("powder", "crystallise"),  # can't crystallise the bones
+    ("powder", "shared"),  # bones are not a div loc
+    ("gilded_altar", "yak_track"),  # yak_track doesn't work with altar
+    ("gilded_altar", "vos"),  # altar not in prif
+    ("gilded_altar", "portable"),  # altar is not a portable
+    ("gilded_altar", "crystallise"),  # can't crystallise the altar
+    ("gilded_altar", "shared"),  # altar is not a div loc
+    ("chaos_altar", "yak_track"),  # yak_track doesn't work with altar
+    ("chaos_altar", "vos"),  # chaos altar not in prif
+    ("chaos_altar", "portable"),  # altar is not a portable
+    ("chaos_altar", "crystallise"),  # can't crystallise the altar
+    ("chaos_altar", "shared"),  # altar is not a div loc
+    ("sanctifier", "yak_track"),  # yak_track doesn't work with sanctifier
+    ("sanctifier", "vos"),  # vos doesn't affect bone burying
+    ("sanctifier", "portable"),  # can't bury bones with a portable
+    ("sanctifier", "crystallise"),  # can't crystallise the bones
+    ("sanctifier", "shared"),  # no bone div loc
+    # other
+    ("demonic_skull", "brawlers"),  # demonic skull doesn't work with at least agility brawlers
+}
+
+# for compactness, some fully connected subgraphs of the mutually exclusive boost graph are represented here as sets
+# each set represents a group of boosts that are totally mutually exclusive with each other
+mutually_exclusive_boosts_fully_connected_subgraphs = [
+    {"wisdom", "scabaras", "prime", "wisdom", "prayer_aura"},  # worn aura slot
+    {"worn_cinder", "worn_pulse", "sanctifier"},  # pocket slot
+    {"ectofuntus", "powder", "gilded_altar", "chaos_altar", "sanctifier"}  # prayer base multipliers
+]
+
+
+# vos/focus order currently unknowable due to each being 20%
+# vos proven to come before portable and crystallise
+# prayer auras are all 3 proven to be in the same spot
+sota_model = dict(
+    base=[["vos"], ["crystallise"], ["portable"], ["focus"], ["shared"], ["ectofuntus", "powder", "gilded_altar", "chaos_altar", "sanctifier", "dragon_rider"], ["demonic_skull"]],
+    additive=[["yak_track", "prime", "scabaras", "bomb", "demonic_skull_rc"]],
+    chain1=[["worn_pulse"], ["pulse"], ["sceptre"], ["coin"], ["torstol"]],
+    chain2=[["wise", "outfit", "premier", "inspire"], ["wisdom", "prayer_aura"], ["brawlers"]],
+    chain3=[],
+    multiplicative=[["avatar"]],
+    bonus=[["worn_cinder"], ["cinder"]],
+)
+
+test_model = dict(
+    base=[["vos"], ["crystallise"], ["portable"], ["focus"], ["shared"], ["ectofuntus", "powder", "gilded_altar", "chaos_altar", "sanctifier", "dragon_rider"]],
+    additive=[["yak_track", "prime", "scabaras", "bomb"]],
+    chain1=[["worn_pulse"], ["pulse"], ["sceptre"], ["coin"], ["torstol"]],
+    chain2=[["wise", "outfit", "premier", "inspire"], ["wisdom", "prayer_aura"], ["brawlers"]],
+    chain3=[],
+    multiplicative=[["avatar"]],
+    bonus=[["worn_cinder"], ["cinder"]],
+)
+
+counting_model = dict(first=[])
+
+
 # number of fields searched at once greatly increases search space, >A083355(n)
-# ['runecrafting_gloves', 'god_potion', 'bonfire', 'dxp', 'furnace', 'brassica']
+# ['runecrafting_gloves', 'god_potion', 'bonfire', 'dxp', 'furnace', 'brassica', 'skillchompa', 'perfect_juju', 'collectors_insignia','fist_of_guthix', 'dwarven_battleaxe']
 # fields_to_add = []
-fields_to_add = []
+fields_to_add = ['demonic_skull', 'demonic_skull_rc']
 allowed_failures = 0
 data_filename = 'data.csv'
-
-print('Starting model:')
-print(model_to_string(test_model))
 
 print('Loading data to test successor models against:')
 data_points = get_data_points(data_filename)
 print('{} data points loaded from {}'.format(len(data_points), data_filename))
 # get the list of fields we're modeling
 tracked_fields = list(get_model_fields(test_model)) + fields_to_add
-print("Filtering data that uses boosts we aren't currently tracking: {}".format(tracked_fields))
-
-
+print("Filtering data that uses boosts we aren't currently exploring:\n{}".format(tracked_fields))
 test_filtered_points = list(filter_data_points(tracked_fields, data_points))
+test_filtered_boosts = get_data_points_boost_complement(tracked_fields, data_points)
+print("Filtered out {} points that use the fields we aren't currently exploring:\n{}".format(len(test_filtered_points) - len(data_points),
+                                                                                     test_filtered_boosts))
 print("{} data points remaining after filtering, showing last 10:".format(len(test_filtered_points)))
 [print(data_point) for data_point in test_filtered_points[-10:]]
+print("\n")
+
+print('Starting test model:')
+print(model_to_string(test_model))
+print("\n")
 
 fields_without_data = get_fields_without_data(tracked_fields, test_filtered_points)
 # if len(fields_without_data) > 1 or (len(fields_without_data) > 0 and "bxp" not in fields_without_data):
 #     raise Exception("Fields {} have no data for the current filtering, data points containing only the boosts {}"
 #       .format(fields_without_data, tracked_fields))
 
-print('Generating and testing successor models by adding {}...'.format(fields_to_add))
+print('Generating and testing successor models by adding {} to the test model...'.format(fields_to_add))
 all_successors = get_successors(test_model, fields_to_add)
 successful_models = list(filter_models(all_successors, test_filtered_points, allowed_failures))
-print("{} error free successor models, printing at most 100".format(len(successful_models)))
-print("candiate_models = [\n"+",\n".join([model_to_string(model, 4) for model in successful_models[:100]]) + "]")
+print("{} error free successor models{}".format(len(successful_models),
+                                                ", printing at most 100" if len(successful_models) > 0 else "."))
+if len(successful_models) > 0:
+    print("candiate_models = [\n"+",\n".join([model_to_string(model, 4) for model in successful_models[:100]]) + "]")
+print("\n")
 
+print("Now testing all applicable data points against the sota model:")
+print(model_to_string(sota_model))
+print("\n")
 
 sota_fields = list(get_model_fields(sota_model))
-print("Filtering data that uses boosts not in the sota model: {}".format(sota_fields + fields_to_add))
+print("Filtering data that uses boosts not in the sota model:\n{}".format(sota_fields))
 sota_test_filtered_points = list(filter_data_points(sota_fields, data_points))
+sota_test_filtered_boosts = get_data_points_boost_complement(sota_fields, data_points)
+print("Filtered out {} points that use the fields not in the sota model:\n{}".format(len(sota_test_filtered_points) - len(data_points),
+                                                                                     sota_test_filtered_boosts))
 error_points = get_contradictory_test_points(sota_model, sota_test_filtered_points)
 print('{}/{} contradictory samples calculated with sota model, printing...'.format(len(error_points), len(sota_test_filtered_points)))
 for error_point_dict in error_points:
@@ -775,18 +838,15 @@ if len(successful_models) > 1:
     else:
         print("No experiments found to help narrow down the {} remaining models".format(len(successful_models)))
 else:
-    print("Successful models is 0 or 1, no need to generate experiments. Try relaxing the constraints a bit")
+    print("Number of successful models is {}, no need to generate experiments.".format(len(successful_models)))
+print("\n")
 
 # find the most complex point to display
 biggest_point = max(data_points, key=lambda point: len(list(filter(lambda value: value > 0, point["boost_vals"].values()))))
 print(json.dumps(biggest_point))
 
-print("Lua version of the sota model:")
-print(model_to_program(sota_model, general_boost_iterables, data_points[-1]))
-
-print("Last recorded data point:")
-[print(data_point_to_string_with_calculation(data_point, sota_model)) for data_point in data_points[-1:]]
-print()
+# print("Lua version of the sota model:")
+# print(model_to_program(sota_model, general_boost_iterables, data_points[-1]))
 
 if len(error_points) > 0:
     print("Error points > 1, taking most recently added error point and attempting to remove boosts until it works.")
@@ -815,3 +875,7 @@ if len(error_points) > 0:
             print(data_point_to_string_with_calculation(reduced_data_point, sota_model))
     else:
         print("No reductions of the most recent error datapoint can explain the error.")
+else:
+    print("Last recorded data point:")
+    [print(data_point_to_string_with_calculation(data_point, sota_model)) for data_point in data_points[-1:]]
+    print()
