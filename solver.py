@@ -124,7 +124,7 @@ def calculate_data_point_xp(model, point):
 # true if valid model for point, false otherwise
 def test_data_point(model, point):
     row_xp = calculate_data_point_xp(model, point)
-    return point['xp_vals']['xp'] == row_xp[0] and point['xp_vals']['(bonus)'] == row_xp[1]
+    return point['xp_vals']['xp'] == row_xp[0] # and point['xp_vals']['(bonus)'] == row_xp[1]
 
 
 # return all
@@ -151,27 +151,42 @@ def apply(base, term, boost_vals):
 
 def get_xp(base, model, boost_vals):
     base = apply(base, model['base'], boost_vals)
-    additive = apply(base, model['additive'], boost_vals) - base
-    chain1 = apply(base, model['chain1'], boost_vals) - base
-    chain2 = apply(base, model['chain2'], boost_vals) - base
-    chain3 = apply(base, model['chain3'], boost_vals) - base
-    multiplicative = apply(chain1 + chain2 + chain3 + base, model['multiplicative'], boost_vals)
+    additive_terms = filter(lambda termname: termname.startswith("additive"), model.keys())
+    additive_term_values = [apply(base, model[additive_term], boost_vals) - base for additive_term in additive_terms]
+    chain_terms = filter(lambda termname: termname.startswith("chain"), model.keys())
+    chain_term_values = [apply(base, model[chain_term], boost_vals) - base for chain_term in chain_terms]
+    multiplicative = apply(sum(chain_term_values) + base, model['multiplicative'], boost_vals)
     bonus_xp = 0
-    if min(boost_vals.get('bxp'), 1000):
+    if min(boost_vals['bxp'], 1000) == 1000:
         bonus_xp = apply(multiplicative, model['bonus'], boost_vals)
-    total = additive + multiplicative + bonus_xp
-    return total, total - base
+    total = sum(additive_term_values) + multiplicative + bonus_xp
+    bonus = total - base
+    if boost_vals['special_slayer_contract'] == 100:
+        boost_vals_reduced = copy.deepcopy(boost_vals)
+        boost_vals_reduced['special_slayer_contract'] = 0
+        xp = get_xp(base//10, model, boost_vals_reduced)
+        total += xp[0]
+        bonus += xp[1]
+    return total, bonus
 
 
 def get_single_generation_of_successors(model, field, filtered_terms=[]):
-    for key in filter(lambda term: term not in filtered_terms, model.keys()):
-        term = model[key]
+    # make a copy of the array with extra empties deleted
+    reduced_model = copy.deepcopy(model)
+    for repeated_term_type in ["additive", "chain"]:
+        repeated_terms = list(filter(lambda termname: termname.startswith(repeated_term_type), model.keys()))
+        for i in range(len(repeated_terms)-1, 0, -1):
+            if len(reduced_model[repeated_terms[i]]) == 0 and len(reduced_model[repeated_terms[i-1]]) == 0:
+                del reduced_model[repeated_terms[i]]
+
+    for key in filter(lambda term: term not in filtered_terms, reduced_model.keys()):
+        term = reduced_model[key]
         for index in range(len(term) + 1):
-            c = copy.deepcopy(model)
+            c = copy.deepcopy(reduced_model)
             c[key].insert(index, [field])
             yield c
         for index in range(len(term)):
-            c = copy.deepcopy(model)
+            c = copy.deepcopy(reduced_model)
             c[key][index].append(field)
             yield c
 
@@ -230,7 +245,11 @@ def model_to_string(model, indent=0):
     return textwrap.indent(return_string, " " * indent)
 
 
-def term_to_program_string(variable_initialization, variable_name, term, ):
+def boost_vals_to_string(boost_vals, indent=4):
+    return json.dumps(dict(filter(lambda entry: entry[1] > 0, boost_vals.items())), indent=indent)
+
+
+def term_to_program_string(variable_initialization, variable_name, term):
     if " " in variable_initialization:
         term_string = "{} = {}\n".format(variable_name, variable_initialization)
         term_string += "\n".join("{} = {} + scale({}, {}, 1000)"
@@ -247,23 +266,36 @@ def term_to_program_string(variable_initialization, variable_name, term, ):
     return term_string
 
 
+def range_to_comment_string(range):
+    if len(range) < 10:
+        return str(range)
+    else:
+        return str(range[:4] + ["..."] + range[-2:]).replace("'...'", "...")
+
+
 def model_to_program(model, ranges, data_point=None):
     if not data_point:
         data_point = {"xp_vals": defaultdict(int),
                       "boost_vals": defaultdict(int)}
-    variables_string = "-- all boosts as their differential bonus / 1000\n"
+    variables_string = "-- all boosts represented as their marginal bonus times 1000\n"
+    variables_string += "-- the logic for which boosts are mutually exclusive is not embedded into this program\n"
+    variables_string += "-- so it is assumed you ensure your inputs are valid (e.g. no chaos altar and gilded altar)\n"
     variables_string += \
-        "\n".join("{} = {}".format(field, data_point["boost_vals"][field]).ljust(18) + "  -- {}".format(str(ranges[field])) for field in get_model_fields(model))
+        "\n".join("{} = {}".format(field, data_point["boost_vals"][field]).ljust(24) + "  -- {}".format(range_to_comment_string(ranges[field])) for field in get_model_fields(model))
 
     base_string = "base = {}".format(data_point["xp_vals"]["base"]) + "  -- activity xp\n"
     base_string += term_to_program_string('base', 'base', model['base'])
-    additive_string = term_to_program_string('base', 'additive', model['additive'])
-    additive_string += "\nadditive = additive - base"
+    additives = list(filter(lambda term_name: term_name.startswith("additive") and model[term_name], model.keys()))
+    additive_strings = "\n".join(term_to_program_string('base', additive_term, model[additive_term]) + "\n{} = {} - base".format(additive_term, additive_term) for additive_term in additives)
+    additive_strings += "\nadditive = {}".format(" + ".join(additives))
     chains = list(filter(lambda term_name: term_name.startswith("chain") and model[term_name], model.keys()))
     chains_strings = "\n".join(term_to_program_string('base', chain_term, model[chain_term]) + "\n{} = {} - base".format(chain_term, chain_term)
                                for chain_term in chains)
     multiplicative_strings = term_to_program_string(" + ".join(chains + ["base"]), 'multiplicative', model['multiplicative'])
-    bonus_strings = "bonus = 0\nif bxp == 1000 then\n" + textwrap.indent(term_to_program_string('multiplicative', 'bonus', model['bonus']), "  ") + "\nend"
+    bonus_strings = "bonus = 0\nif bxp == 1000 then\n"
+    bonus_strings += textwrap.indent(
+        term_to_program_string('multiplicative', 'bonus', model['bonus']) or "bonus = multiplicative", "  ")
+    bonus_strings += "\nend"
     total_strings = 'total = additive + multiplicative + bonus\n' \
                     'print("+" .. total/10 .. " xp (" .. (total - base)/10 .. " bonus xp)")\n' \
                     '-- given example should come out to {}'.format(format_xp_tuple((data_point["xp_vals"]["xp"], data_point["xp_vals"]["(bonus)"])))
@@ -275,7 +307,7 @@ def model_to_program(model, ranges, data_point=None):
 {}
 {}
 {}
-""".format(base_string, additive_string, chains_strings, multiplicative_strings, bonus_strings, total_strings)
+""".format(base_string, additive_strings, chains_strings, multiplicative_strings, bonus_strings, total_strings)
 
     return """
 function scale(xp, numerator, denominator)
@@ -335,11 +367,34 @@ firemaking_activities = {
 }
 
 crafting_activites = {
+    "cut_opal": 150,
+    "cut_jade": 200,
+    "cut_topaz": 250,
+    "cut_sapphire": 500,
+    "cut_emerald": 675,
+    "cut_ruby": 850,
+    "cut_diamond": 1075,
     "cut_dragonstone": 1375,
+    "cut_onyx": 1675,
+    "cut_hydrix": 1975,
 }
 
 fishing_activities = {
-
+    "fish_trout": 500,
+    "fish_salmon": 700,
+    "fish_leaping_trout": 600,
+    "fish_leaping_salmon": 820,
+    "fish_monkfish": 1200,
+    "fish_green_jellyfish": 1650,
+    "fish_leaping_sturgeon": 920,
+    "fish_shark": 1100,
+    "fish_cavefish": 3000,
+    "fish_rocktail": 3800,
+    "fish_blue_jellyfish": 3900,
+    "fish_small_crystal": 3100,
+    "fish_medium_crystal": 3300,
+    "fish_large_crystal": 3500,
+    "fish_sailfish": 4000
 }
 
 mining_activities = {
@@ -347,7 +402,15 @@ mining_activities = {
 }
 
 hunter_activities = {
-
+    "polar_kebbit": 150,
+    "common_kebbit": 360,
+    "feldip_weasel": 480,
+    "desert_devil": 900,
+    "spotted_kebbit": 1040,
+    "hunt_penguin": 2500,
+    "razor-backed_kebbit": 4700,
+    "dark_kebbit": 990,
+    "dashing_kebbit": 1560,
 }
 
 dragon_bone_activities = {
@@ -398,6 +461,18 @@ rc_activities = {
 }
 rc_activities.update(abyss_rc_activities)
 
+wildy_slayer_activities = {
+    "slay_abyssal_demon": 277.2,
+}
+
+slayer_tower_activities = {
+    "slay_abyssal_demon": 277.2,
+}
+
+slayer_activities = {}
+slayer_activities.update(wildy_slayer_activities)
+slayer_activities.update(slayer_tower_activities)
+
 activities = {}
 # activities.update(wc_activities)
 # activities.update(fishing_activities)
@@ -406,107 +481,8 @@ activities = {}
 # activities.update(arch_activities)
 # activities.update(firemaking_activities)
 # activities.update(crafting_activites)
-activities.update(prayer_activities)
-
-
-# iterables that when product-ed together will produce all boost combinations
-# number of boost combinations total is at most equal to the product of total levels of each boost
-general_boost_iterables = dict(
-    wise=[*inclusive_range(0, 40, 10)],
-    torstol=[*inclusive_range(0, 20, 5)],
-    outfit=[*inclusive_range(0, 60, 10)],
-    avatar=[0, *inclusive_range(30, 60, 10)],
-    yak_track=[0, 100, 200],
-    wisdom=[0, 25],
-    bxp=[0, 1000],
-    premier=[0, 100],
-    scabaras=[0, 100],
-    prime=[0, 100, 1000],
-    pulse=[*inclusive_range(0, 100, 20)],
-    worn_pulse=[0, 500],
-    cinder=[*inclusive_range(0, 100, 20)],
-    worn_cinder=[0, 1500],
-    vos=[0, 200],
-    coin=[0, 10, 20],
-    sceptre=[0, 20, 40],
-    inspire=[0, 20],
-    focus=[0, 200],
-    shared=[0, 250],
-    brawlers=[0, 500, 3000],
-    bomb=[0, 500],
-    portable=[0, 100],
-    crystallise=[0, 200, 400, 500, 875],
-    ectofuntus=[0, 3000],
-    powder=[0, 2500],
-    gilded_altar=[0, 1500, 2000, 2500],
-    chaos_altar=[0, 2500],
-    sanctifier=[0, 2500],
-    prayer_aura=[0, *inclusive_range(10, 25, 5)],
-    dragon_rider=[0, 1000],
-    demonic_skull=[0, 250, *inclusive_range(40, 2960, 40)],
-    demonic_skull_rc=[0, 250, *inclusive_range(40, 2960, 40)],
-)
-
-# each boost lists the order in which their state is the most to least preferable, for experiment design
-# this would be filled differently for different players with different accounts, or changed as circumstances change
-# ordering here also matters, as it affects the order boosts are iterated through, leave the ones you don't want to
-# change at the front
-boost_preferences = dict(
-    bomb=[0, 500],
-    inspire=[0, 20],
-    brawlers=[0, 500, 3000],
-    yak_track=[200, 0, 100],
-    vos=[0, 200],
-    portable=[0, 100],
-    wise=[0, 40, 30, 20, 10],
-    prime=[0, 100, 1000],
-    bxp=[0, 1000],
-    cinder=[0, 100, 20, 40, 60, 80],
-    worn_cinder=[0, 1500],
-    pulse=[0, 100, 20, 40, 60, 80],
-    worn_pulse=[0, 500],
-    coin=[0, 10, 20],
-    sceptre=[0, 20, 40],
-    wisdom=[0, 25],
-    scabaras=[0, 100],
-    premier=[0, 100],
-    avatar=[60, 0, 50, 40, 30],
-    torstol=[0, 5, 20, 15, 10],
-    outfit=[0, 10, 20, 30, 40, 50, 60],
-    focus=[0, 200],
-    shared=[0, 250],
-    crystallise=[0, 200, 400, 500, 875],  # 500(875) when wc/fish/hunt, 200(400) mining (light form)
-    ectofuntus=[0, 3000],
-    gilded_altar=[0, 1500, 2000, 2500],
-    chaos_altar=[0, 2500],
-    sanctifier=[0, 2500],
-    powder=[0, 2500],
-    prayer_aura=[0, 15, 25, 20, 10],
-    dragon_rider=[0, 1000],
-    # ranges are all wildy agility
-    demonic_skull=[0, 250, 2960, 200, *range(40, 200, 40), *range(240, 2960, 40)],
-    demonic_skull_rc=[0, 250, 2960, 200, *range(40, 200, 40), *range(240, 2960, 40)],
-)
-
-# boost states that are currently unavailable to experimental design
-invalid_boosts = dict(
-    # outfit=[40, 60],  # 4 piece outfit
-    avatar=[50, 40, 30],  # avatar bonus only 60 or 0 if max fealty
-    yak_track=[0, 100],  # can't toggle yak track
-    bxp=[1000],
-    # premier=[100],
-    coin=[20, 0],
-    sceptre=[40, 0],
-    worn_pulse=[500],
-    worn_cinder=[1500],
-    # pulse=[100,20,40,60,80],
-    # cinder=[100,20,40,60,80]
-    # wisdom=[0],
-    inspire=[20],
-    prayer_aura=[25, 20, 10],
-    demonic_skull=[*range(40, 200, 40), *range(240, 2960, 40)],
-    demonic_skull_rc=[*range(40, 200, 40), *range(240, 2960, 40)],
-)
+# activities.update(prayer_activities)
+activities.update(slayer_activities)
 
 
 def get_boost_on_default_dict(boost_vals):
@@ -573,18 +549,138 @@ def validate_experiment(experiment):
         return False
     if boost_on["ectofuntus"] and activity_name not in prayer_activities:
         return False
-    if boost_on["demonic_skull"] \
-            and ((boost_vals_["demonic_skull"] == 2500 and
-                  activity_name not in list(chain(abyss_rc_activities, ["wilderness_agility"])))
-                 or (boost_vals_["demonic_skull"] == 200 and
-                     activity_name not in ["wilderness_agility"])  # slayer/farming/hunter/divination in the wildy
-                 or (boost_vals_["demonic_skull"] in set(inclusive_range(40, 2960, 40)) and
-                     activity_name not in ["wilderness_agility"])):
+    if boost_on["demonic_skull_div"] and activity_name != "cursed_memory":
+        return False
+    if boost_on["demonic_skull_hunt"] and activity_name != "charming_moth":
+        return False
+    # if boost_on["demonic_skull_farm"] and activity_name != herb_farm_activities or flower_farm_activities:
+    #     return False
+    if boost_on["demonic_skull_rc"] and activity_name not in abyss_rc_activities:
+        return False
+    if (boost_on["demonic_skull_agil"] or boost_on["wildy_sword"]) and activity_name not in "wilderness_agility":
+        return False
+    if boost_on["demonic_skull_slay"] and activity_name not in wildy_slayer_activities:
+        return False
+    if boost_on["special_slayer_contract"] and activity_name not in chain(wildy_slayer_activities, slayer_tower_activities):
+        return False
+    if boost_on["morytania_legs_slayer"] and activity_name not in slayer_tower_activities:
         return False
     return True
 
 
+# iterables that when product-ed together will produce all boost combinations
+# number of boost combinations total is at most equal to the product of total levels of each boost
+general_boost_iterables = dict(
+    wise=[*inclusive_range(0, 40, 10)],
+    torstol=[*inclusive_range(0, 20, 5)],
+    outfit=[*inclusive_range(0, 60, 10)],
+    avatar=[0, *inclusive_range(30, 60, 10)],
+    yak_track=[0, 100, 200],
+    wisdom=[0, 25],
+    bxp=[0, 1000],
+    premier=[0, 100],
+    scabaras=[0, 100],
+    prime=[0, 100, 1000],
+    pulse=[*inclusive_range(0, 100, 20)],
+    worn_pulse=[0, 500],
+    cinder=[*inclusive_range(0, 100, 20)],
+    worn_cinder=[0, 1500],
+    vos=[0, 200],
+    coin=[0, 10, 20],
+    sceptre=[0, 20, 40],
+    inspire=[0, 20],
+    focus=[0, 200],
+    shared=[0, 250],
+    brawlers=[0, 500, 3000],
+    bomb=[0, 500],
+    portable=[0, 100],
+    crystallise=[0, 200, 400, 500, 875],
+    ectofuntus=[0, 3000],
+    powder=[0, 2500],
+    gilded_altar=[0, 1500, 2000, 2500],
+    chaos_altar=[0, 2500],
+    sanctifier=[0, 2500],
+    prayer_aura=[0, *inclusive_range(10, 25, 5)],
+    dragon_rider=[0, 1000],
+    demonic_skull_runecrafting=[0, 2500],
+    demonic_skull_farming=[0, 200],
+    demonic_skull_divination=[0, 200],
+    demonic_skull_hunter=[0, 200],
+    demonic_skull_agility=[*inclusive_range(0, 1960, 40)],
+    demonic_skull_slayer=[0, 200],
+    special_slayer_contract=[0, 200],
+    div_energy=[0, 250],
+    wildy_sword=[0, 50],
+    morytania_legs_slayer=[0, 100],
+)
 
+# each boost lists the order in which their state is the most to least preferable, for experiment design
+# this would be filled differently for different players with different accounts, or changed as circumstances change
+# ordering here also matters, as it affects the order boosts are iterated through, leave the ones you don't want to
+# change at the front
+boost_preferences = dict(
+    bomb=[0, 500],
+    inspire=[0, 20],
+    brawlers=[0, 500, 3000],
+    yak_track=[200, 0, 100],
+    vos=[0, 200],
+    portable=[0, 100],
+    wise=[0, 40, 30, 20, 10],
+    prime=[0, 100, 1000],
+    bxp=[0, 1000],
+    cinder=[0, 100, 20, 40, 60, 80],
+    worn_cinder=[0, 1500],
+    pulse=[0, 100, 20, 40, 60, 80],
+    worn_pulse=[0, 500],
+    coin=[0, 10, 20],
+    sceptre=[0, 20, 40],
+    wisdom=[0, 25],
+    scabaras=[0, 100],
+    premier=[0, 100],
+    avatar=[60, 0, 50, 40, 30],
+    torstol=[0, 5, 20, 15, 10],
+    outfit=[0, 10, 20, 30, 40, 50, 60],
+    focus=[0, 200],
+    shared=[0, 250],
+    crystallise=[0, 200, 400, 500, 875],  # 500(875) when wc/fish/hunt, 200(400) mining (light form)
+    ectofuntus=[0, 3000],
+    gilded_altar=[0, 1500, 2000, 2500],
+    chaos_altar=[0, 2500],
+    sanctifier=[0, 2500],
+    powder=[0, 2500],
+    prayer_aura=[0, 15, 25, 20, 10],
+    dragon_rider=[0, 1000],
+    # ranges are all wildy agility
+    demonic_skull_runecrafting=[0, 2500],
+    demonic_skull_farming=[0, 200],
+    demonic_skull_divination=[0, 200],
+    demonic_skull_hunter=[0, 200],
+    demonic_skull_agility=[*inclusive_range(0, 1960, 40)],
+    demonic_skull_slayer=[0, 200],
+    special_slayer_contract=[0, 100],
+    div_energy=[0, 250],
+    wildy_sword=[0, 50],
+    morytania_legs_slayer=[0, 100],
+)
+
+# boost states that are currently unavailable to experimental design
+invalid_boosts = dict(
+    # outfit=[40, 60],  # 4 piece outfit
+    avatar=[50, 40, 30],  # avatar bonus only 60 or 0 if max fealty
+    yak_track=[0, 100],  # can't toggle yak track
+    bxp=[1000],
+    # premier=[100],
+    coin=[20, 0],
+    sceptre=[40, 0],
+    worn_pulse=[500],
+    worn_cinder=[1500],
+    # pulse=[100,20,40,60,80],
+    # cinder=[100,20,40,60,80]
+    # wisdom=[0],
+    # inspire=[20],
+    prayer_aura=[25, 20, 10],
+    demonic_skull=[*range(40, 200, 40), *range(240, 1960, 40)],
+)
 
 # store the mutually exclusive boosts as an edge list for validation
 # if any of these turn out to be false, both boosts need to be re-placed into the model with new experiments
@@ -626,7 +722,7 @@ mutually_exclusive_boosts_edge_list = {
     ("sanctifier", "crystallise"),  # can't crystallise the bones
     ("sanctifier", "shared"),  # no bone div loc
     # other
-    ("demonic_skull", "brawlers"),  # demonic skull doesn't work with at least agility brawlers
+    ("demonic_skull_agility", "brawlers"),  # demonic skull doesn't work with at least agility brawlers
 }
 
 # for compactness, some fully connected subgraphs of the mutually exclusive boost graph are represented here as sets
@@ -634,16 +730,24 @@ mutually_exclusive_boosts_edge_list = {
 mutually_exclusive_boosts_fully_connected_subgraphs = [
     {"wisdom", "scabaras", "prime", "wisdom", "prayer_aura"},  # worn aura slot
     {"worn_cinder", "worn_pulse", "sanctifier"},  # pocket slot
-    {"ectofuntus", "powder", "gilded_altar", "chaos_altar", "sanctifier"}  # prayer base multipliers
+    {"ectofuntus", "powder", "gilded_altar", "chaos_altar", "sanctifier"},  # prayer base multipliers
+    # mutually exclusive skull effects
+    {"demonic_skull_runecrating", "demonic_skull_farming", "demonic_skull_divination", "demonic_skull_hunter",
+     "demonic_skull_agility"},
 ]
 
 
 # vos/focus order currently unknowable due to each being 20%
 # vos proven to come before portable and crystallise
 # prayer auras are all 3 proven to be in the same spot
+# unsure if div_energy comes before or after demonic_skull_div
 sota_model = dict(
-    base=[["vos"], ["crystallise"], ["portable"], ["focus"], ["shared"], ["ectofuntus", "powder", "gilded_altar", "chaos_altar", "sanctifier", "dragon_rider"], ["demonic_skull"]],
-    additive=[["yak_track", "prime", "scabaras", "bomb", "demonic_skull_rc"]],
+    base=[["vos"], ["crystallise"], ["portable"], ["focus"], ["shared"],
+          ["ectofuntus", "powder", "gilded_altar", "chaos_altar", "sanctifier", "dragon_rider"], ["div_energy"],
+          ["demonic_skull_divination", "demonic_skull_hunter", "demonic_skull_agility", "wildy_sword"]],
+    additive1=[["yak_track", "prime", "scabaras", "bomb"]],
+    additive2=[["demonic_skull_runecrafting", "demonic_skull_farming", "demonic_skull_slayer"]],
+    additive3=[],
     chain1=[["worn_pulse"], ["pulse"], ["sceptre"], ["coin"], ["torstol"]],
     chain2=[["wise", "outfit", "premier", "inspire"], ["wisdom", "prayer_aura"], ["brawlers"]],
     chain3=[],
@@ -652,8 +756,12 @@ sota_model = dict(
 )
 
 test_model = dict(
-    base=[["vos"], ["crystallise"], ["portable"], ["focus"], ["shared"], ["ectofuntus", "powder", "gilded_altar", "chaos_altar", "sanctifier", "dragon_rider"]],
-    additive=[["yak_track", "prime", "scabaras", "bomb"]],
+    base=[["vos"], ["crystallise"], ["portable"], ["focus"], ["shared"],
+          ["ectofuntus", "powder", "gilded_altar", "chaos_altar", "sanctifier", "dragon_rider"], ["div_energy"],
+          ["demonic_skull_divination", "demonic_skull_hunter", "demonic_skull_agility", "wildy_sword"]],
+    additive1=[["yak_track", "prime", "scabaras", "bomb"]],
+    additive2=[["demonic_skull_runecrafting", "demonic_skull_farming", "demonic_skull_slayer"]],
+    additive3=[],
     chain1=[["worn_pulse"], ["pulse"], ["sceptre"], ["coin"], ["torstol"]],
     chain2=[["wise", "outfit", "premier", "inspire"], ["wisdom", "prayer_aura"], ["brawlers"]],
     chain3=[],
@@ -661,14 +769,27 @@ test_model = dict(
     bonus=[["worn_cinder"], ["cinder"]],
 )
 
+blank_model = dict(
+    base=[],
+    additive1=[],
+    additive2=[],
+    additive3=[],
+    chain1=[],
+    chain2=[],
+    chain3=[],
+    multiplicative=[],
+    bonus=[],
+)
+
 counting_model = dict(first=[])
 
 
 # number of fields searched at once greatly increases search space, >A083355(n)
-# ['runecrafting_gloves', 'god_potion', 'bonfire', 'dxp', 'furnace', 'brassica', 'skillchompa', 'perfect_juju', 'collectors_insignia','fist_of_guthix', 'dwarven_battleaxe']
-# fields_to_add = []
-fields_to_add = ['demonic_skull', 'demonic_skull_rc']
-allowed_failures = 0
+# ['runecrafting_gloves', 'god_potion', 'bonfire', 'dxp', 'furnace', 'brassica', 'skillchompa', 'perfect_juju',
+# 'collectors_insignia', 'fist_of_guthix', 'dwarven_battleaxe', 'sharks_tooth_necklace', 'switft_sailfish']
+fields_to_add = []
+# fields_to_add = ["demonic_skull_slay", "avatar", "wise", "torstol", "yak_track"]
+allowed_errors = 0
 data_filename = 'data.csv'
 
 print('Loading data to test successor models against:')
@@ -679,7 +800,7 @@ tracked_fields = list(get_model_fields(test_model)) + fields_to_add
 print("Filtering data that uses boosts we aren't currently exploring:\n{}".format(tracked_fields))
 test_filtered_points = list(filter_data_points(tracked_fields, data_points))
 test_filtered_boosts = get_data_points_boost_complement(tracked_fields, data_points)
-print("Filtered out {} points that use the fields we aren't currently exploring:\n{}".format(len(test_filtered_points) - len(data_points),
+print("Filtered out {} points that use the fields we aren't currently exploring:\n{}".format(len(data_points) - len(test_filtered_points),
                                                                                      test_filtered_boosts))
 print("{} data points remaining after filtering, showing last 10:".format(len(test_filtered_points)))
 [print(data_point) for data_point in test_filtered_points[-10:]]
@@ -696,11 +817,11 @@ fields_without_data = get_fields_without_data(tracked_fields, test_filtered_poin
 
 print('Generating and testing successor models by adding {} to the test model...'.format(fields_to_add))
 all_successors = get_successors(test_model, fields_to_add)
-successful_models = list(filter_models(all_successors, test_filtered_points, allowed_failures))
-print("{} error free successor models{}".format(len(successful_models),
-                                                ", printing at most 100" if len(successful_models) > 0 else "."))
+successful_models = list(filter_models(all_successors, test_filtered_points, allowed_errors))
+print("{} successor models {}, printing:".format(len(successful_models),
+                                                "with less than {} errors".format(allowed_errors) if len(successful_models) > 0 else "with no errors"))
 if len(successful_models) > 0:
-    print("candiate_models = [\n"+",\n".join([model_to_string(model, 4) for model in successful_models[:100]]) + "]")
+    print("candiate_models = [\n"+",\n".join([model_to_string(model, 4) for model in successful_models]) + "]")
 print("\n")
 
 print("Now testing all applicable data points against the sota model:")
@@ -711,7 +832,7 @@ sota_fields = list(get_model_fields(sota_model))
 print("Filtering data that uses boosts not in the sota model:\n{}".format(sota_fields))
 sota_test_filtered_points = list(filter_data_points(sota_fields, data_points))
 sota_test_filtered_boosts = get_data_points_boost_complement(sota_fields, data_points)
-print("Filtered out {} points that use the fields not in the sota model:\n{}".format(len(sota_test_filtered_points) - len(data_points),
+print("Filtered out {} points that use the fields not in the sota model:\n{}".format(len(data_points) - len(sota_test_filtered_points),
                                                                                      sota_test_filtered_boosts))
 error_points = get_contradictory_test_points(sota_model, sota_test_filtered_points)
 print('{}/{} contradictory samples calculated with sota model, printing...'.format(len(error_points), len(sota_test_filtered_points)))
@@ -721,7 +842,8 @@ for error_point_dict in error_points:
     calculated = format_xp_tuple(xp_vals['calculated_xp'])
     observed = format_xp_tuple((xp_vals['xp'], xp_vals['(bonus)']))
     print('discrepancy: {} calculated: {} observed: {} base: {}, boosts:{}'
-          .format(discrepancy, calculated, observed, xp_vals['base'], error_point_dict['boost_vals']))
+          .format(discrepancy, calculated, observed, xp_vals['base'], boost_vals_to_string(error_point_dict['boost_vals']), indent=0))
+print("\n")
 
 
 # debug new successors generation
@@ -729,8 +851,9 @@ for error_point_dict in error_points:
 # count all possibilities (for oeis)
 # [print(i, len(list(get_successors(counting_model, map(str, range(i)))))) for i in range(10)]
 
-fields_for_powerset = ['avatar','torstol','outfit']
+fields_for_powerset = ['avatar', 'torstol', 'outfit']
 field_powerset = list(powerset(fields_for_powerset))
+print("Generating all subsets of {} to help with experiment design:".format(fields_for_powerset))
 [print(subset) for subset in minimize_transitions(field_powerset, fields_for_powerset)]
 
 # next up, experiment suggester
@@ -794,16 +917,12 @@ def data_point_to_string(data_point, indent=0):
     return "\n".join(data_point_to_strings(data_point))
 
 
-def boost_vals_to_string(boost_vals):
-    return json.dumps(dict(filter(lambda entry: entry[1] > 0, boost_vals.items())), indent=4)
-
-
 if len(successful_models) > 1:
     print("Attempting to narrow down the {} valid candidate models by generating you an experiment".format(
         len(successful_models)))
     print("Score is in the range of {}-0, with lower being better".format(len(successful_models) - 1))
     # generate all possible boost levels
-    boost_combinations = generate_boost_combinations(boost_preferences, invalid_boosts, tracked_fields, 3)
+    boost_combinations = generate_boost_combinations(boost_preferences, invalid_boosts, tracked_fields, 2)
     # filter out boost combinations for which mutual exclusion rules have been violated
     boost_combinations = filter(lambda boost_vals: validate_boost_vals(boost_vals, mutually_exclusive_boosts_edge_list,
                                                                        mutually_exclusive_boosts_fully_connected_subgraphs),
@@ -842,17 +961,22 @@ else:
 print("\n")
 
 # find the most complex point to display
-biggest_point = max(data_points, key=lambda point: len(list(filter(lambda value: value > 0, point["boost_vals"].values()))))
-print(json.dumps(biggest_point))
+biggest_point = max(data_points,
+                    key=lambda point: len(list(filter(lambda value: value > 0, point["boost_vals"].values()))))
 
-# print("Lua version of the sota model:")
-# print(model_to_program(sota_model, general_boost_iterables, data_points[-1]))
+lua_filename = "jagex_pseudocode.lua"
 
 if len(error_points) > 0:
-    print("Error points > 1, taking most recently added error point and attempting to remove boosts until it works.")
+    print("Number of error points: {}, is greater than 1, taking most recently added error point and attempting to "
+          "remove boosts until it works.".format(
+            len(error_points)))
     # remove boosts from boost_vals and test whether we get a number
     # useful for determining if we need to exclude certain boosts to make a model valid
-    data_point = error_points[-1:][0]  # usually the most recent point anyway
+    data_point = error_points[-1]  # usually the most recent point anyway
+
+    with open(lua_filename, "w") as f:
+        f.write(model_to_program(sota_model, general_boost_iterables, data_point))
+    print("Lua version of the sota model with the latest error point written to {}".format(lua_filename))
 
     print("Point in question:")
     print(data_point_to_string_with_calculation(data_point, sota_model))
@@ -879,3 +1003,6 @@ else:
     print("Last recorded data point:")
     [print(data_point_to_string_with_calculation(data_point, sota_model)) for data_point in data_points[-1:]]
     print()
+    with open(lua_filename, "w") as f:
+        f.write(model_to_program(sota_model, general_boost_iterables, biggest_point))
+    print("Lua version of the sota model with the most complex data point written to {}".format(lua_filename))
