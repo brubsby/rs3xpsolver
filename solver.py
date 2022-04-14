@@ -2,8 +2,9 @@ import copy
 import csv
 import json
 import textwrap
-from itertools import chain, combinations, product
+from itertools import chain, combinations, product, zip_longest
 from collections import defaultdict
+import random
 
 
 def inclusive_range(start, stop, step):
@@ -14,6 +15,10 @@ def powerset(iterable):
     "powerset([1,2,3]) --> () (1,) (2,) (3,) (1,2) (1,3) (2,3) (1,2,3)"
     s = list(iterable)
     return chain.from_iterable(combinations(s, r) for r in range(len(s)+1))
+
+
+def count_iterable(it):
+    return sum(1 for dummy in it)
 
 
 def format_xp_int(xp_int, sign=True):
@@ -122,9 +127,10 @@ def calculate_data_point_xp(model, point):
 
 
 # true if valid model for point, false otherwise
-def test_data_point(model, point):
+def test_data_point(model, point, allowed_tolerance=0):
     row_xp = calculate_data_point_xp(model, point)
-    return point['xp_vals']['xp'] == row_xp[0] # and point['xp_vals']['(bonus)'] == row_xp[1]
+    return abs(point['xp_vals']['xp'] - row_xp[0]) <= allowed_tolerance and (
+                point['xp_vals']['(bonus)'] == 0 or abs(point['xp_vals']['(bonus)'] - row_xp[1]) <= allowed_tolerance)
 
 
 # return all
@@ -141,6 +147,13 @@ def get_contradictory_test_points(model, points):
     return contradictory_data_points
 
 
+# get all nonzero boost values for a nonnested term
+def get_non_nested_term_nonzero_boost_vals(model, boost_vals, term_name):
+    return map(lambda boost_name: boost_vals[boost_name],
+               filter(lambda boost_name: boost_vals[boost_name] > 0,
+                      flatten(model[term_name])))
+
+
 def apply(base, term, boost_vals):
     xp = base
     for multiplicative_group in term:
@@ -150,45 +163,70 @@ def apply(base, term, boost_vals):
 
 
 def get_xp(base, model, boost_vals):
-    base = apply(base, model['base'], boost_vals)
-    additive_terms = filter(lambda termname: termname.startswith("additive"), model.keys())
-    additive_term_values = [apply(base, model[additive_term], boost_vals) - base for additive_term in additive_terms]
-    chain_terms = filter(lambda termname: termname.startswith("chain"), model.keys())
-    chain_term_values = [apply(base, model[chain_term], boost_vals) - base for chain_term in chain_terms]
-    multiplicative = apply(sum(chain_term_values) + base, model['multiplicative'], boost_vals)
-    bonus_xp = 0
-    if min(boost_vals['bxp'], 1000) == 1000:
-        bonus_xp = apply(multiplicative, model['bonus'], boost_vals)
-    total = sum(additive_term_values) + multiplicative + bonus_xp
-    bonus = total - base
-    if boost_vals['special_slayer_contract'] == 100:
-        boost_vals_reduced = copy.deepcopy(boost_vals)
-        boost_vals_reduced['special_slayer_contract'] = 0
-        xp = get_xp(base//10, model, boost_vals_reduced)
-        total += xp[0]
-        bonus += xp[1]
-    return total, bonus
+    mitosis_percent_bases = [sum(map(lambda boost: boost_vals[boost], group)) * base // 1000 for group in
+                                  model["mitosis_percent"]]
+    mitosis_constant_bases = [sum(map(lambda boost: boost_vals[boost], group)) for group in model["mitosis_constant"]]
+    bases = [base, *[(percent or 0) + (constant or 0) for percent, constant in
+                     zip_longest(mitosis_percent_bases, mitosis_constant_bases)]]
+    constant = sum(get_non_nested_term_nonzero_boost_vals(model, boost_vals, "constant"))
+    outer_total = 0
+    outer_bonus = 0
+    for inner_base in bases:
+        base = apply(inner_base, model['base'], boost_vals) + constant
+        constant = 0
+        additive_terms = filter(lambda termname: termname.startswith("additive"), model.keys())
+        additive_term_values = [apply(base, model[additive_term], boost_vals) - base for additive_term in additive_terms]
+        chain_terms = filter(lambda termname: termname.startswith("chain"), model.keys())
+        chain_term_values = [apply(base, model[chain_term], boost_vals) - base for chain_term in chain_terms]
+        multiplicative = apply(sum(chain_term_values) + base, model['multiplicative'], boost_vals)
+        bonus_xp = 0
+        if min(boost_vals['bxp'], 1000) == 1000:
+            bonus_xp = apply(multiplicative, model['bonus'], boost_vals)
+        inner_total = sum(additive_term_values) + multiplicative + bonus_xp
+        inner_bonus = inner_total - base
+        outer_total += inner_total
+        outer_bonus += inner_bonus
+    return outer_total, outer_bonus
 
 
 def get_single_generation_of_successors(model, field, filtered_terms=[]):
     # make a copy of the array with extra empties deleted
     reduced_model = copy.deepcopy(model)
     for repeated_term_type in ["additive", "chain"]:
-        repeated_terms = list(filter(lambda termname: termname.startswith(repeated_term_type), model.keys()))
+        repeated_terms = list(filter(lambda termname: termname.startswith(repeated_term_type), reduced_model.keys()))
         for i in range(len(repeated_terms)-1, 0, -1):
             if len(reduced_model[repeated_terms[i]]) == 0 and len(reduced_model[repeated_terms[i-1]]) == 0:
                 del reduced_model[repeated_terms[i]]
+        repeated_terms = list(filter(lambda termname: termname.startswith(repeated_term_type), reduced_model.keys()))
+        empty_count = 0
+        for i in range(len(repeated_terms)):
+            if len(reduced_model[repeated_terms[i]]) < 1:
+                empty_count += 1
+        if empty_count < 1:
+            reduced_model[repeated_term_type + str(len(repeated_terms) + 1)] = []
+
+    if len(reduced_model["mitosis_percent"]) - len(reduced_model["mitosis_constant"]) >= 1:
+        reduced_model["mitosis_constant"].append([])
+    if len(reduced_model["mitosis_constant"]) - len(reduced_model["mitosis_percent"]) >= 1:
+        reduced_model["mitosis_percent"].append([])
 
     for key in filter(lambda term: term not in filtered_terms, reduced_model.keys()):
         term = reduced_model[key]
-        for index in range(len(term) + 1):
+        if key == "constant":  # non-nested
             c = copy.deepcopy(reduced_model)
-            c[key].insert(index, [field])
+            if len(c[key]) < 1:
+                c[key].append([])
+            c[key][0].append(field)
             yield c
-        for index in range(len(term)):
-            c = copy.deepcopy(reduced_model)
-            c[key][index].append(field)
-            yield c
+        else:
+            for index in range(len(term) + 1):
+                c = copy.deepcopy(reduced_model)
+                c[key].insert(index, [field])
+                yield c
+            for index in range(len(term)):
+                c = copy.deepcopy(reduced_model)
+                c[key][index].append(field)
+                yield c
 
 
 # pass a string or list of strings to fields to generate all possible models based on those fields
@@ -203,13 +241,44 @@ def get_successors(starting_model, fields, filtered_terms=[]):
     return models
 
 
+def get_successors_reject_early(starting_model, fields, data_points, filtered_terms=[], allowed_errors=0,
+                                allowed_tolerance=0):
+    models = [starting_model]
+    tracked_fields = list(get_model_fields(starting_model))
+    for i in range(len(fields)):
+        max = 0
+        max_index = i
+        for j in range(i, len(fields)):
+            num = count_iterable(filter_data_points(tracked_fields + fields[:i] + [fields[j]], data_points))
+            if num > max:
+                max = num
+                max_index = j
+        print("{} data points for field: {}".format(max, fields[max_index]))
+        fields[i], fields[max_index] = fields[max_index], fields[i]
+    print("optimized field addition order: {}".format(fields))
+    i = 1
+    for field in fields:  # number of generations of successors
+        next_successors = []
+        tracked_fields.append(field)
+        print("{} tolerable generations for second to last field".format(i))
+        print("Generating all '{}' successors".format(field))
+        reduced_data_points = list(filter_data_points(tracked_fields, data_points))
+        i = 0
+        for model in models:  # generate the next generation of successors for all models of the previous generation
+            next_successors.extend(get_single_generation_of_successors(model, field, filtered_terms))
+            i += 1
+        models = list(filter_models(next_successors, reduced_data_points, allowed_errors, allowed_tolerance))
+        print(models)
+    return models
+
+
 # test every model for every data point, and reject a model when it fails
-def filter_models(models, data_points, allowed_failures=0):
+def filter_models(models, data_points, allowed_failures=0, allowed_tolerance=0):
     for model in models:
         model_valid = True
         failures = 0
         for point in data_points:
-            if not test_data_point(model, point):
+            if not test_data_point(model, point, allowed_tolerance):
                 failures += 1
                 if failures > allowed_failures:
                     model_valid = False
@@ -281,7 +350,7 @@ def model_to_program(model, ranges, data_point=None):
     variables_string += "-- the logic for which boosts are mutually exclusive is not embedded into this program\n"
     variables_string += "-- so it is assumed you ensure your inputs are valid (e.g. no chaos altar and gilded altar)\n"
     variables_string += \
-        "\n".join("{} = {}".format(field, data_point["boost_vals"][field]).ljust(24) + "  -- {}".format(range_to_comment_string(ranges[field])) for field in get_model_fields(model))
+        "\n".join("{} = {}".format(field, data_point["boost_vals"][field]).ljust(28) + "  -- {}".format(range_to_comment_string(ranges[field])) for field in get_model_fields(model))
 
     base_string = "base = {}".format(data_point["xp_vals"]["base"]) + "  -- activity xp\n"
     base_string += term_to_program_string('base', 'base', model['base'])
@@ -469,9 +538,14 @@ slayer_tower_activities = {
     "slay_abyssal_demon": 277.2,
 }
 
+slayer_mask_activities = {
+    "slay_abyssal_demon": 277.2,
+}
+
 slayer_activities = {}
 slayer_activities.update(wildy_slayer_activities)
 slayer_activities.update(slayer_tower_activities)
+slayer_activities.update(slayer_mask_activities)
 
 activities = {}
 # activities.update(wc_activities)
@@ -565,6 +639,8 @@ def validate_experiment(experiment):
         return False
     if boost_on["morytania_legs_slayer"] and activity_name not in slayer_tower_activities:
         return False
+    if boost_on["slayer_mask"] and activity_name not in slayer_mask_activities:
+        return False
     return True
 
 
@@ -612,6 +688,11 @@ general_boost_iterables = dict(
     div_energy=[0, 250],
     wildy_sword=[0, 50],
     morytania_legs_slayer=[0, 100],
+    slayer_mask=[10, 50, 150, 250, 400, 500, 520, 600, 650, 670, 700, 730, 750, 770, 780, 800, 850, 860, 900, 910, 920,
+                 930, 950],  # xp from mask equal to slayer level of monster mask represents
+    slayer_codex=[*inclusive_range(0, 50, 10)],
+    juju_god_potion=[0, 100],
+    brassica=[0, 100],
 )
 
 # each boost lists the order in which their state is the most to least preferable, for experiment design
@@ -661,11 +742,16 @@ boost_preferences = dict(
     div_energy=[0, 250],
     wildy_sword=[0, 50],
     morytania_legs_slayer=[0, 100],
+    slayer_mask=[0, 850, 10, 50, 150, 250, 400, 500, 520, 600, 650, 670, 700, 730, 750, 770, 780, 800, 860, 900, 910,
+                 920, 930, 950],  # prefer abyssal demons
+    slayer_codex=[0, 40, 50, 10, 20, 30],
+    juju_god_potion=[0, 100],
+    brassica=[0, 100],
 )
 
 # boost states that are currently unavailable to experimental design
 invalid_boosts = dict(
-    # outfit=[40, 60],  # 4 piece outfit
+    outfit=[10, 20, 30, 40, 50, 60],
     avatar=[50, 40, 30],  # avatar bonus only 60 or 0 if max fealty
     yak_track=[0, 100],  # can't toggle yak track
     bxp=[1000],
@@ -679,7 +765,7 @@ invalid_boosts = dict(
     # wisdom=[0],
     # inspire=[20],
     prayer_aura=[25, 20, 10],
-    demonic_skull=[*range(40, 200, 40), *range(240, 1960, 40)],
+    demonic_skull_agility=[range(40, 1960, 40)],
 )
 
 # store the mutually exclusive boosts as an edge list for validation
@@ -723,6 +809,8 @@ mutually_exclusive_boosts_edge_list = {
     ("sanctifier", "shared"),  # no bone div loc
     # other
     ("demonic_skull_agility", "brawlers"),  # demonic skull doesn't work with at least agility brawlers
+    ("demonic_skull_slayer", "morytania_legs_slayer"),  # wildy and slayer tower separate locations
+    ("slayer_codex", "outfit"),  # likely the same exact boost, but needed to prove they're the same
 }
 
 # for compactness, some fully connected subgraphs of the mutually exclusive boost graph are represented here as sets
@@ -748,25 +836,47 @@ sota_model = dict(
     additive1=[["yak_track", "prime", "scabaras", "bomb"]],
     additive2=[["demonic_skull_runecrafting", "demonic_skull_farming", "demonic_skull_slayer"]],
     additive3=[],
+    constant=[],
     chain1=[["worn_pulse"], ["pulse"], ["sceptre"], ["coin"], ["torstol"]],
-    chain2=[["wise", "outfit", "premier", "inspire"], ["wisdom", "prayer_aura"], ["brawlers"]],
+    chain2=[["wise", "outfit", "premier", "inspire", "slayer_codex"], ["wisdom", "prayer_aura"], ["brawlers"]],
     chain3=[],
     multiplicative=[["avatar"]],
     bonus=[["worn_cinder"], ["cinder"]],
+    mitosis_percent=[["morytania_legs_slayer", "special_slayer_contract"]],
+    mitosis_constant=[[], ["slayer_mask"]],
 )
 
 test_model = dict(
     base=[["vos"], ["crystallise"], ["portable"], ["focus"], ["shared"],
           ["ectofuntus", "powder", "gilded_altar", "chaos_altar", "sanctifier", "dragon_rider"], ["div_energy"],
-          ["demonic_skull_divination", "demonic_skull_hunter", "demonic_skull_agility", "wildy_sword"]],
+          ["demonic_skull_divination", "demonic_skull_hunter", "demonic_skull_agility", "wildy_sword",
+           ]],
     additive1=[["yak_track", "prime", "scabaras", "bomb"]],
     additive2=[["demonic_skull_runecrafting", "demonic_skull_farming", "demonic_skull_slayer"]],
     additive3=[],
+    constant=[],
     chain1=[["worn_pulse"], ["pulse"], ["sceptre"], ["coin"], ["torstol"]],
     chain2=[["wise", "outfit", "premier", "inspire"], ["wisdom", "prayer_aura"], ["brawlers"]],
     chain3=[],
     multiplicative=[["avatar"]],
     bonus=[["worn_cinder"], ["cinder"]],
+    mitosis_percent=[],
+    mitosis_constant=[],
+)
+
+blank_model = dict(
+    base=[["wildy_sword"]],
+    additive1=[["yak_track"]],
+    additive2=[["demonic_skull_slayer"]],
+    additive3=[],
+    constant=[],
+    chain1=[["worn_pulse"], ["pulse"], ["sceptre"], ["coin"], ["torstol"]],
+    chain2=[["wise", "outfit", "premier", "slayer_codex"], ["wisdom"]],
+    chain3=[],
+    multiplicative=[["avatar"]],
+    bonus=[["worn_cinder"], ["cinder"]],
+    mitosis_percent=[],
+    mitosis_constant=[],
 )
 
 blank_model = dict(
@@ -774,22 +884,27 @@ blank_model = dict(
     additive1=[],
     additive2=[],
     additive3=[],
+    constant=[],
     chain1=[],
     chain2=[],
     chain3=[],
     multiplicative=[],
     bonus=[],
+    mitosis_percent=[],
+    mitosis_constant=[],
 )
 
 counting_model = dict(first=[])
 
 
 # number of fields searched at once greatly increases search space, >A083355(n)
-# ['runecrafting_gloves', 'god_potion', 'bonfire', 'dxp', 'furnace', 'brassica', 'skillchompa', 'perfect_juju',
-# 'collectors_insignia', 'fist_of_guthix', 'dwarven_battleaxe', 'sharks_tooth_necklace', 'switft_sailfish']
-fields_to_add = []
-# fields_to_add = ["demonic_skull_slay", "avatar", "wise", "torstol", "yak_track"]
+# ['runecrafting_gloves', 'juju_god_potion', 'bonfire', 'dxp', 'furnace', 'brassica', 'skillchompa', 'perfect_juju',
+# 'collectors_insignia', 'fist_of_guthix', 'dwarven_battleaxe', 'sharks_tooth_necklace', 'swift_sailfish', 'dragon-slayer_gloves']
+on_hold_fields = ["brassica", "juju_god_potion"]
+fields_to_add = ["morytania_legs_slayer", "slayer_mask", "special_slayer_contract", "slayer_codex"]
+# fields_to_add = ["slayer_mask"]
 allowed_errors = 0
+allowed_tolerance = 1
 data_filename = 'data.csv'
 
 print('Loading data to test successor models against:')
@@ -810,14 +925,15 @@ print('Starting test model:')
 print(model_to_string(test_model))
 print("\n")
 
-fields_without_data = get_fields_without_data(tracked_fields, test_filtered_points)
+# fields_without_data = get_fields_without_data(tracked_fields, test_filtered_points)
 # if len(fields_without_data) > 1 or (len(fields_without_data) > 0 and "bxp" not in fields_without_data):
 #     raise Exception("Fields {} have no data for the current filtering, data points containing only the boosts {}"
 #       .format(fields_without_data, tracked_fields))
 
 print('Generating and testing successor models by adding {} to the test model...'.format(fields_to_add))
-all_successors = get_successors(test_model, fields_to_add)
-successful_models = list(filter_models(all_successors, test_filtered_points, allowed_errors))
+successful_models = list(get_successors_reject_early(test_model, fields_to_add, data_points, [], allowed_errors,
+                                             allowed_tolerance))
+# successful_models = list(filter_models(all_successors, test_filtered_points, allowed_errors, allowed_tolerance))
 print("{} successor models {}, printing:".format(len(successful_models),
                                                 "with less than {} errors".format(allowed_errors) if len(successful_models) > 0 else "with no errors"))
 if len(successful_models) > 0:
@@ -871,16 +987,6 @@ def boost_iterables_to_boost_value_tuples(boost_iterables):
         yield [(boost, level) for level in levels]
 
 
-def boost_value_product_to_boost_vals_dict(boost_value_product):
-    for boost_value_tuples in boost_value_product:
-        boost_vals = dict(boost_value_tuples)
-        yield boost_vals
-
-
-def count_iterable(it):
-    return sum(1 for dummy in it)
-
-
 # generate all valid boost combinations given a boost to iterable of values map
 # and a similar boost to value map of currently impossible values
 # also pass in the per_boost_depth to only calculate combinations based on the nth most preferred boost values per boost
@@ -892,11 +998,11 @@ def generate_boost_combinations(boost_iterables, invalid_boost_values, tracked_b
     for boost, values in invalid_boost_values.items():
         if boost in boosts_less_invalids:
             boosts_less_invalids[boost] = list(filter(lambda boost: boost not in values, boosts_less_invalids[boost]))
-    for boost in tracked_boosts:
-        if per_boost_depth > 0:
+    if per_boost_depth > 0:
+        for boost in tracked_boosts:
             boosts_less_invalids[boost] = boosts_less_invalids[boost][:per_boost_depth]
     boost_value_product = product(*boost_iterables_to_boost_value_tuples(boosts_less_invalids))
-    return boost_value_product_to_boost_vals_dict(boost_value_product)
+    return (dict(boost_value_tuples) for boost_value_tuples in boost_value_product)
 
 
 def data_point_to_string_with_calculation(data_point, model, indent=0):
@@ -922,13 +1028,17 @@ if len(successful_models) > 1:
         len(successful_models)))
     print("Score is in the range of {}-0, with lower being better".format(len(successful_models) - 1))
     # generate all possible boost levels
-    boost_combinations = generate_boost_combinations(boost_preferences, invalid_boosts, tracked_fields, 2)
+    boost_combinations = generate_boost_combinations(boost_preferences, invalid_boosts, tracked_fields, 3)
     # filter out boost combinations for which mutual exclusion rules have been violated
+    print("boost_combinations done")
     boost_combinations = filter(lambda boost_vals: validate_boost_vals(boost_vals, mutually_exclusive_boosts_edge_list,
                                                                        mutually_exclusive_boosts_fully_connected_subgraphs),
                                 boost_combinations)
+    print("boost_combinations filter done")
     experiments_product = product(boost_combinations, activities.items())
+    print("product generator done")
     experiment_dicts = (dict(activity=activity, boost_vals=boost_vals) for boost_vals, activity in experiments_product)
+    print("dict generator done")
     experiment_dicts = filter(validate_experiment, experiment_dicts)
 
     min_score = len(successful_models)-1
@@ -1006,3 +1116,31 @@ else:
     with open(lua_filename, "w") as f:
         f.write(model_to_program(sota_model, general_boost_iterables, biggest_point))
     print("Lua version of the sota model with the most complex data point written to {}".format(lua_filename))
+
+slayer_mask_to_xp_map = {
+    10: [49.8, 52.2, 57.6, 61.0, 294.4],  # dagannoth, mountain trolls, black demons
+    50: [7.6, 9.2],  # crawling hands
+    150: [],
+    250: [],
+    400: [],
+    500: [],
+    520: [],
+    600: [],
+    650: [],
+    670: [],
+    700: [],
+    730: [],
+    750: [],
+    770: [],
+    780: [],
+    800: [],
+    850: [],
+    860: [],
+    900: [],
+    910: [],
+    920: [],
+    930: [],
+    950: []
+
+}
+

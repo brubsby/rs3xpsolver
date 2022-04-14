@@ -1,4 +1,4 @@
-xp	(bonus)	base	bxp	dxp	bomb	yak_track	torstol	premier	avatar	worn_pulse	pulse	worn_cinder	cinder	sceptre	coin	outfit	raf	prayer_aura	wise	shared	vos	brawlers	inspire	wisdom	scabaras	prime	focus	portable	crystallise	ectofuntus	powder	gilded_altar	chaos_altar	sanctifier	dragon_rider	demonic_skull_runecrating	demonic_skull_divination	div_energy	demonic_skull_farming	demonic_skull_hunter	demonic_skull_agility	wildy_sword	demonic_skull_slayer	special_slayer_contract	slayer_codex	morytania_legs_slayer
+xp	(bonus)	base	bxp	dxp	bomb	yak_track	torstol	premier	avatar	worn_pulse	pulse	worn_cinder	cinder	sceptre	coin	outfit	raf	prayer_aura	wise	shared	vos	brawlers	inspire	wisdom	scabaras	prime	focus	portable	crystallise	ectofuntus	powder	gilded_altar	chaos_altar	sanctifier	dragon_rider	demonic_skull_runecrafting	demonic_skull_divination	div_energy	demonic_skull_farming	demonic_skull_hunter	demonic_skull_agility	wildy_sword	demonic_skull_slayer	special_slayer_contract	slayer_codex	morytania_legs_slayer	slayer_mask	brassica	juju_god_potion
 175.0	0.0	175.0
 210.0	35.0	175.0				0.2
 218.7	43.7	175.0				0.2			0.05
@@ -241,3 +241,31 @@ xp	(bonus)	base	bxp	dxp	bomb	yak_track	torstol	premier	avatar	worn_pulse	pulse	w
 945.3		693.2				0.2													0.04																									0.1
 914.9		693.2				0.2																																						0.1
 831.8		693.2				0.2
+399.0		277.2				0.2																																						0.1		0.1
+427.1		277.2				0.2	0.005												0.04																									0.1	0.04	0.1
+519.6		277.2				0.2	0.005												0.04																									0.1		0.1	0.85
+467.8		277.2				0.2																																						0.1			0.85
+483.3		277.2				0.2													0.04																									0.1			0.85
+485.1		277.2				0.2	0.005												0.04																									0.1			0.85
+469.6		277.2				0.2	0.005																																					0.1			0.85
+503.0		277.2				0.2	0.005																																					0.1		0.1	0.85
+501.0		277.2				0.2																																						0.1		0.1	0.85
+467.8		277.2				0.2																																								0.1	0.85
+469.7		277.2				0.2	0.005																																							0.1	0.85
+436.3		277.2				0.2	0.005																																								0.85
+367.3		277.2				0.2	0.005																																							0.1
+403.6		277.2				0.2	0.005		0.06		0.1		0.1						0.04																										0.04
+411.4		277.2				0.2	0.005		0.06		0.1		0.1						0.04					0.025																					0.04
+106673.8		35057.7	1			0.2	0.01		0.06		0.1		0.1			0.01			0.04					0.025																								0.1	0.1
+5281.9	3486.9	1795.0	1			0.2	0.01		0.06		0.1		0.1			0.01			0.04					0.025																									0.1
+101119.8	66061.9	35057.7	1			0.2	0.01		0.06		0.1		0.1			0.01			0.04																													0.1
+4997.6	3202.6	1795.0	1			0.2	0.01		0.06		0.1		0.1			0.01			0.04
+553.2		277.2				0.2	0.01		0.06		0.1								0.04																											0.1	0.85
+594.8		277.2				0.2	0.015		0.06		0.1								0.04																									0.1		0.1	0.85
+16.4		7.6				0.2	0.005												0.04																											0.1	0.05
+18.7		9.2				0.2	0.005												0.04																											0.1	0.05
+15.1		7.6				0.2																																									0.05
+17.0		9.2				0.2																																									0.05
+15.3		7.6				0.2	0.005																	0.025																							0.05
+17.3		9.2				0.2	0.005																	0.025																							0.05
+392.6		294.4				0.2	0.005																	0.025																							0.25
