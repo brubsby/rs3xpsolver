@@ -163,17 +163,22 @@ def apply(base, term, boost_vals):
 
 
 def get_xp(base, model, boost_vals):
-    mitosis_percent_bases = [sum(map(lambda boost: boost_vals[boost], group)) * base // 1000 for group in
-                                  model["mitosis_percent"]]
-    mitosis_constant_bases = [sum(map(lambda boost: boost_vals[boost], group)) for group in model["mitosis_constant"]]
-    bases = [base, *[(percent or 0) + (constant or 0) for percent, constant in
-                     zip_longest(mitosis_percent_bases, mitosis_constant_bases)]]
-    constant = sum(get_non_nested_term_nonzero_boost_vals(model, boost_vals, "constant"))
+    constant_groups = [sum(map(lambda boost: boost_vals[boost], group)) for group in model["constant"]]
+    base += sum(constant_groups)
+    mitosis_percent_bases = [sum(map(lambda boost: boost_vals[boost], group)) * base // 1000 for group in model["mitosis_percent"]]
+    mitosis_constant_pre_bases = [sum(map(lambda boost: boost_vals[boost], group)) for group in model["mitosis_pre_constant"]]
+    mitosis_constant_post_bases = [sum(map(lambda boost: boost_vals[boost], group)) for group in model["mitosis_post_constant"]]
+    base_tuples = [((percent or 0), (pre_constant or 0), (post_constant or 0)) for percent, pre_constant, post_constant
+                   in
+                   zip_longest(mitosis_percent_bases, mitosis_constant_pre_bases, mitosis_constant_post_bases)]
+    if len(base_tuples) == 0:
+        base_tuples = [(0, 0, 0)]
+    base_tuples[0] = (base_tuples[0][0] + base, base_tuples[0][1], base_tuples[0][2])
+    base_tuples = list(filter(lambda base_tuple: max(base_tuple) > 0, base_tuples))
     outer_total = 0
     outer_bonus = 0
-    for inner_base in bases:
-        base = apply(inner_base, model['base'], boost_vals) + constant
-        constant = 0
+    for inner_base, inner_pre_constant, inner_post_constant in base_tuples:
+        base = apply(inner_base + inner_pre_constant, model['base'], boost_vals) + inner_post_constant
         additive_terms = filter(lambda termname: termname.startswith("additive"), model.keys())
         additive_term_values = [apply(base, model[additive_term], boost_vals) - base for additive_term in additive_terms]
         chain_terms = filter(lambda termname: termname.startswith("chain"), model.keys())
@@ -191,42 +196,45 @@ def get_xp(base, model, boost_vals):
 
 def get_single_generation_of_successors(model, field, filtered_terms=[]):
     # make a copy of the array with extra empties deleted
-    reduced_model = copy.deepcopy(model)
+    model = copy.deepcopy(model)
     for repeated_term_type in ["additive", "chain"]:
-        repeated_terms = list(filter(lambda termname: termname.startswith(repeated_term_type), reduced_model.keys()))
+        repeated_terms = list(filter(lambda termname: termname.startswith(repeated_term_type), model.keys()))
         for i in range(len(repeated_terms)-1, 0, -1):
-            if len(reduced_model[repeated_terms[i]]) == 0 and len(reduced_model[repeated_terms[i-1]]) == 0:
-                del reduced_model[repeated_terms[i]]
-        repeated_terms = list(filter(lambda termname: termname.startswith(repeated_term_type), reduced_model.keys()))
+            if len(model[repeated_terms[i]]) == 0 and len(model[repeated_terms[i-1]]) == 0:
+                del model[repeated_terms[i]]
+        repeated_terms = list(filter(lambda termname: termname.startswith(repeated_term_type), model.keys()))
         empty_count = 0
         for i in range(len(repeated_terms)):
-            if len(reduced_model[repeated_terms[i]]) < 1:
+            if len(model[repeated_terms[i]]) < 1:
                 empty_count += 1
         if empty_count < 1:
-            reduced_model[repeated_term_type + str(len(repeated_terms) + 1)] = []
+            model[repeated_term_type + str(len(repeated_terms) + 1)] = []
 
-    if len(reduced_model["mitosis_percent"]) - len(reduced_model["mitosis_constant"]) >= 1:
-        reduced_model["mitosis_constant"].append([])
-    if len(reduced_model["mitosis_constant"]) - len(reduced_model["mitosis_percent"]) >= 1:
-        reduced_model["mitosis_percent"].append([])
+    positional_terms = ["mitosis_percent", "mitosis_pre_constant", "mitosis_post_constant"]
+    non_nested_terms = ["constant"]
+    # number of separate xp drops for a given model
+    max_positional_term_length = max(*map(lambda term: len(model[term]), positional_terms), 2)
+    for positional_term in positional_terms:
+        if max_positional_term_length > len(model[positional_term]):
+            model[positional_term].append([])
 
-    for key in filter(lambda term: term not in filtered_terms, reduced_model.keys()):
-        term = reduced_model[key]
-        if key == "constant":  # non-nested
-            c = copy.deepcopy(reduced_model)
+    for key in filter(lambda term: term not in filtered_terms, model.keys()):
+        term = model[key]
+        if key not in non_nested_terms:
+            for index in range(len(term) + 1):
+                c = copy.deepcopy(model)
+                c[key].insert(index, [field])
+                yield c
+            for index in range(len(term)):
+                c = copy.deepcopy(model)
+                c[key][index].append(field)
+                yield c
+        else:
+            c = copy.deepcopy(model)
             if len(c[key]) < 1:
                 c[key].append([])
             c[key][0].append(field)
             yield c
-        else:
-            for index in range(len(term) + 1):
-                c = copy.deepcopy(reduced_model)
-                c[key].insert(index, [field])
-                yield c
-            for index in range(len(term)):
-                c = copy.deepcopy(reduced_model)
-                c[key][index].append(field)
-                yield c
 
 
 # pass a string or list of strings to fields to generate all possible models based on those fields
@@ -833,8 +841,8 @@ sota_model = dict(
     base=[["vos"], ["crystallise"], ["portable"], ["focus"], ["shared"],
           ["ectofuntus", "powder", "gilded_altar", "chaos_altar", "sanctifier", "dragon_rider"], ["div_energy"],
           ["demonic_skull_divination", "demonic_skull_hunter", "demonic_skull_agility", "wildy_sword"]],
-    additive1=[["yak_track", "prime", "scabaras", "bomb"]],
-    additive2=[["demonic_skull_runecrafting", "demonic_skull_farming", "demonic_skull_slayer"]],
+    additive1=[["yak_track", "prime", "scabaras", "bomb", "brassica"]],
+    additive2=[["demonic_skull_runecrafting", "demonic_skull_farming", "demonic_skull_slayer", "juju_god_potion"]],
     additive3=[],
     constant=[],
     chain1=[["worn_pulse"], ["pulse"], ["sceptre"], ["coin"], ["torstol"]],
@@ -842,41 +850,27 @@ sota_model = dict(
     chain3=[],
     multiplicative=[["avatar"]],
     bonus=[["worn_cinder"], ["cinder"]],
-    mitosis_percent=[["morytania_legs_slayer", "special_slayer_contract"]],
-    mitosis_constant=[[], ["slayer_mask"]],
+    mitosis_percent=[["morytania_legs_slayer"], [], ["special_slayer_contract"]],
+    mitosis_pre_constant=[[], [], []],
+    mitosis_post_constant=[[], ["slayer_mask"], []],
 )
 
 test_model = dict(
     base=[["vos"], ["crystallise"], ["portable"], ["focus"], ["shared"],
           ["ectofuntus", "powder", "gilded_altar", "chaos_altar", "sanctifier", "dragon_rider"], ["div_energy"],
-          ["demonic_skull_divination", "demonic_skull_hunter", "demonic_skull_agility", "wildy_sword",
-           ]],
-    additive1=[["yak_track", "prime", "scabaras", "bomb"]],
-    additive2=[["demonic_skull_runecrafting", "demonic_skull_farming", "demonic_skull_slayer"]],
+          ["demonic_skull_divination", "demonic_skull_hunter", "demonic_skull_agility", "wildy_sword"]],
+    additive1=[["yak_track", "prime", "scabaras", "bomb", "brassica"]],
+    additive2=[["demonic_skull_runecrafting", "demonic_skull_farming", "demonic_skull_slayer", "juju_god_potion"]],
     additive3=[],
     constant=[],
     chain1=[["worn_pulse"], ["pulse"], ["sceptre"], ["coin"], ["torstol"]],
-    chain2=[["wise", "outfit", "premier", "inspire"], ["wisdom", "prayer_aura"], ["brawlers"]],
+    chain2=[["wise", "outfit", "premier", "inspire", "slayer_codex"], ["wisdom", "prayer_aura"], ["brawlers"]],
     chain3=[],
     multiplicative=[["avatar"]],
     bonus=[["worn_cinder"], ["cinder"]],
-    mitosis_percent=[],
-    mitosis_constant=[],
-)
-
-blank_model = dict(
-    base=[["wildy_sword"]],
-    additive1=[["yak_track"]],
-    additive2=[["demonic_skull_slayer"]],
-    additive3=[],
-    constant=[],
-    chain1=[["worn_pulse"], ["pulse"], ["sceptre"], ["coin"], ["torstol"]],
-    chain2=[["wise", "outfit", "premier", "slayer_codex"], ["wisdom"]],
-    chain3=[],
-    multiplicative=[["avatar"]],
-    bonus=[["worn_cinder"], ["cinder"]],
-    mitosis_percent=[],
-    mitosis_constant=[],
+    mitosis_percent=[["morytania_legs_slayer"], [], ["special_slayer_contract"]],
+    mitosis_pre_constant=[[], [], []],
+    mitosis_post_constant=[[], ["slayer_mask"], []],
 )
 
 blank_model = dict(
@@ -890,8 +884,9 @@ blank_model = dict(
     chain3=[],
     multiplicative=[],
     bonus=[],
-    mitosis_percent=[],
-    mitosis_constant=[],
+    mitosis_percent=[],  # positional boosts that act as either base
+    mitosis_pre_constant=[],
+    mitosis_post_constant=[],
 )
 
 counting_model = dict(first=[])
@@ -899,13 +894,12 @@ counting_model = dict(first=[])
 
 # number of fields searched at once greatly increases search space, >A083355(n)
 # ['runecrafting_gloves', 'juju_god_potion', 'bonfire', 'dxp', 'furnace', 'brassica', 'skillchompa', 'perfect_juju',
-# 'collectors_insignia', 'fist_of_guthix', 'dwarven_battleaxe', 'sharks_tooth_necklace', 'swift_sailfish', 'dragon-slayer_gloves']
-on_hold_fields = ["brassica", "juju_god_potion"]
-fields_to_add = ["morytania_legs_slayer", "slayer_mask", "special_slayer_contract", "slayer_codex"]
-# fields_to_add = ["slayer_mask"]
+# 'collectors_insignia', 'fist_of_guthix', 'dwarven_battleaxe', 'sharks_tooth_necklace', 'swift_sailfish',
+# 'dragon-slayer_gloves']
+fields_to_add = []
 allowed_errors = 0
-allowed_tolerance = 1
-data_filename = 'data.csv'
+allowed_tolerance = 3
+data_filename = 'temp.csv'
 
 print('Loading data to test successor models against:')
 data_points = get_data_points(data_filename)
@@ -967,10 +961,11 @@ print("\n")
 # count all possibilities (for oeis)
 # [print(i, len(list(get_successors(counting_model, map(str, range(i)))))) for i in range(10)]
 
-fields_for_powerset = ['avatar', 'torstol', 'outfit']
+fields_for_powerset = []
 field_powerset = list(powerset(fields_for_powerset))
 print("Generating all subsets of {} to help with experiment design:".format(fields_for_powerset))
 [print(subset) for subset in minimize_transitions(field_powerset, fields_for_powerset)]
+print("\n")
 
 # next up, experiment suggester
 # first, generate candidate models that could explain all data with new boosts (we already do this)
