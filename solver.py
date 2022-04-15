@@ -841,9 +841,9 @@ sota_model = dict(
     base=[["vos"], ["crystallise"], ["portable"], ["focus"], ["shared"],
           ["ectofuntus", "powder", "gilded_altar", "chaos_altar", "sanctifier", "dragon_rider"], ["div_energy"],
           ["demonic_skull_divination", "demonic_skull_hunter", "demonic_skull_agility", "wildy_sword"]],
-    additive1=[["yak_track", "prime", "scabaras", "bomb", "brassica"]],
-    additive2=[["demonic_skull_runecrafting", "demonic_skull_farming", "demonic_skull_slayer", "juju_god_potion"]],
-    additive3=[],
+    additive1=[["yak_track", "prime", "scabaras", "bomb"]],
+    additive2=[["demonic_skull_runecrafting", "demonic_skull_farming", "demonic_skull_slayer", "brassica"]],
+    additive3=[["juju_god_potion"]],
     constant=[],
     chain1=[["worn_pulse"], ["pulse"], ["sceptre"], ["coin"], ["torstol"]],
     chain2=[["wise", "outfit", "premier", "inspire", "slayer_codex"], ["wisdom", "prayer_aura"], ["brawlers"]],
@@ -859,8 +859,8 @@ test_model = dict(
     base=[["vos"], ["crystallise"], ["portable"], ["focus"], ["shared"],
           ["ectofuntus", "powder", "gilded_altar", "chaos_altar", "sanctifier", "dragon_rider"], ["div_energy"],
           ["demonic_skull_divination", "demonic_skull_hunter", "demonic_skull_agility", "wildy_sword"]],
-    additive1=[["yak_track", "prime", "scabaras", "bomb", "brassica"]],
-    additive2=[["demonic_skull_runecrafting", "demonic_skull_farming", "demonic_skull_slayer", "juju_god_potion"]],
+    additive1=[["yak_track", "prime", "scabaras", "bomb"]],
+    additive2=[["demonic_skull_runecrafting", "demonic_skull_farming", "demonic_skull_slayer"]],
     additive3=[],
     constant=[],
     chain1=[["worn_pulse"], ["pulse"], ["sceptre"], ["coin"], ["torstol"]],
@@ -893,13 +893,13 @@ counting_model = dict(first=[])
 
 
 # number of fields searched at once greatly increases search space, >A083355(n)
-# ['runecrafting_gloves', 'juju_god_potion', 'bonfire', 'dxp', 'furnace', 'brassica', 'skillchompa', 'perfect_juju',
+# ['runecrafting_gloves', 'bonfire', 'dxp', 'furnace', 'skillchompa', 'perfect_juju',
 # 'collectors_insignia', 'fist_of_guthix', 'dwarven_battleaxe', 'sharks_tooth_necklace', 'swift_sailfish',
 # 'dragon-slayer_gloves']
-fields_to_add = []
+fields_to_add = ["juju_god_potion", "brassica"]
 allowed_errors = 0
-allowed_tolerance = 3
-data_filename = 'temp.csv'
+allowed_tolerance = 0
+data_filename = 'data.csv'
 
 print('Loading data to test successor models against:')
 data_points = get_data_points(data_filename)
