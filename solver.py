@@ -701,6 +701,10 @@ general_boost_iterables = dict(
     slayer_codex=[*inclusive_range(0, 50, 10)],
     juju_god_potion=[0, 100],
     brassica=[0, 100],
+    enhanced_yaktwee=[0, 20],
+    protean_trap=[0, 500],
+    skillchompa=[0, 100],
+    perfect_juju=[0, 50],
 )
 
 # each boost lists the order in which their state is the most to least preferable, for experiment design
@@ -755,6 +759,10 @@ boost_preferences = dict(
     slayer_codex=[0, 40, 50, 10, 20, 30],
     juju_god_potion=[0, 100],
     brassica=[0, 100],
+    enhanced_yaktwee=[0, 20],
+    protean_trap=[0, 500],
+    skillchompa=[0, 100],
+    perfect_juju=[0, 50],
 )
 
 # boost states that are currently unavailable to experimental design
@@ -835,18 +843,19 @@ mutually_exclusive_boosts_fully_connected_subgraphs = [
 
 # vos/focus order currently unknowable due to each being 20%
 # vos proven to come before portable and crystallise
+# perfect juju proven to come after vos, before portable
 # prayer auras are all 3 proven to be in the same spot
-# unsure if div_energy comes before or after demonic_skull_div
+# skillchompa proven before vos
 sota_model = dict(
-    base=[["vos"], ["crystallise"], ["portable"], ["focus"], ["shared"],
-          ["ectofuntus", "powder", "gilded_altar", "chaos_altar", "sanctifier", "dragon_rider"], ["div_energy"],
-          ["demonic_skull_divination", "demonic_skull_hunter", "demonic_skull_agility", "wildy_sword"]],
+    base=[["skillchompa"], ["vos"], ["crystallise", "perfect_juju"], ["portable"], ["focus"], ["shared"], ["protean_trap"],
+          ["ectofuntus", "powder", "gilded_altar", "chaos_altar", "sanctifier", "dragon_rider"],
+          ["div_energy"], ["demonic_skull_divination", "demonic_skull_hunter", "demonic_skull_agility", "wildy_sword"]],
     additive1=[["yak_track", "prime", "scabaras", "bomb"]],
     additive2=[["demonic_skull_runecrafting", "demonic_skull_farming", "demonic_skull_slayer", "brassica"]],
     additive3=[["juju_god_potion"]],
     constant=[],
     chain1=[["worn_pulse"], ["pulse"], ["sceptre"], ["coin"], ["torstol"]],
-    chain2=[["wise", "outfit", "premier", "inspire", "slayer_codex"], ["wisdom", "prayer_aura"], ["brawlers"]],
+    chain2=[["wise", "outfit", "premier", "inspire", "slayer_codex", "enhanced_yaktwee"], ["wisdom", "prayer_aura"], ["brawlers"]],
     chain3=[],
     multiplicative=[["avatar"]],
     bonus=[["worn_cinder"], ["cinder"]],
@@ -856,15 +865,15 @@ sota_model = dict(
 )
 
 test_model = dict(
-    base=[["vos"], ["crystallise"], ["portable"], ["focus"], ["shared"],
-          ["ectofuntus", "powder", "gilded_altar", "chaos_altar", "sanctifier", "dragon_rider"], ["div_energy"],
-          ["demonic_skull_divination", "demonic_skull_hunter", "demonic_skull_agility", "wildy_sword"]],
+    base=[["vos"], ["crystallise", "perfect_juju"], ["portable"], ["focus"], ["shared"], ["protean_trap"],
+          ["ectofuntus", "powder", "gilded_altar", "chaos_altar", "sanctifier", "dragon_rider"],
+          ["div_energy"], ["demonic_skull_divination", "demonic_skull_hunter", "demonic_skull_agility", "wildy_sword"]],
     additive1=[["yak_track", "prime", "scabaras", "bomb"]],
-    additive2=[["demonic_skull_runecrafting", "demonic_skull_farming", "demonic_skull_slayer"]],
-    additive3=[],
+    additive2=[["demonic_skull_runecrafting", "demonic_skull_farming", "demonic_skull_slayer", "brassica"]],
+    additive3=[["juju_god_potion"]],
     constant=[],
     chain1=[["worn_pulse"], ["pulse"], ["sceptre"], ["coin"], ["torstol"]],
-    chain2=[["wise", "outfit", "premier", "inspire", "slayer_codex"], ["wisdom", "prayer_aura"], ["brawlers"]],
+    chain2=[["wise", "outfit", "premier", "inspire", "slayer_codex", "enhanced_yaktwee"], ["wisdom", "prayer_aura"], ["brawlers"]],
     chain3=[],
     multiplicative=[["avatar"]],
     bonus=[["worn_cinder"], ["cinder"]],
@@ -893,10 +902,9 @@ counting_model = dict(first=[])
 
 
 # number of fields searched at once greatly increases search space, >A083355(n)
-# ['runecrafting_gloves', 'bonfire', 'dxp', 'furnace', 'skillchompa', 'perfect_juju',
-# 'collectors_insignia', 'fist_of_guthix', 'dwarven_battleaxe', 'sharks_tooth_necklace', 'swift_sailfish',
-# 'dragon-slayer_gloves']
-fields_to_add = ["juju_god_potion", "brassica"]
+# ['runecrafting_gloves', 'bonfire', 'dxp', 'furnace', 'collectors_insignia', 'fist_of_guthix', 'brooch',
+# 'dwarven_battleaxe', 'sharks_tooth_necklace', 'swift_sailfish', 'dragon-slayer_gloves', 'roar']
+fields_to_add = []
 allowed_errors = 0
 allowed_tolerance = 0
 data_filename = 'data.csv'
