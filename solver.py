@@ -5,6 +5,7 @@ import textwrap
 from itertools import chain, combinations, product, zip_longest
 from collections import defaultdict
 import random
+import time
 
 
 def inclusive_range(start, stop, step):
@@ -555,7 +556,12 @@ slayer_activities.update(wildy_slayer_activities)
 slayer_activities.update(slayer_tower_activities)
 slayer_activities.update(slayer_mask_activities)
 
-activities = {}
+
+farm_plot_activities = {}
+farm_activities = {}
+farm_activities.update(farm_plot_activities)
+
+activities = {"water_rune" : 60}
 # activities.update(wc_activities)
 # activities.update(fishing_activities)
 # activities.update(mining_activities)
@@ -564,7 +570,8 @@ activities = {}
 # activities.update(firemaking_activities)
 # activities.update(crafting_activites)
 # activities.update(prayer_activities)
-activities.update(slayer_activities)
+# activities.update(slayer_activities)
+# activities.update(farm_activities
 
 
 def get_boost_on_default_dict(boost_vals):
@@ -631,23 +638,37 @@ def validate_experiment(experiment):
         return False
     if boost_on["ectofuntus"] and activity_name not in prayer_activities:
         return False
-    if boost_on["demonic_skull_div"] and activity_name != "cursed_memory":
+    if boost_on["demonic_skull_divination"] and activity_name != "cursed_memory":
         return False
-    if boost_on["demonic_skull_hunt"] and activity_name != "charming_moth":
+    if boost_on["demonic_skull_hunter"] and activity_name != "charming_moth":
         return False
-    # if boost_on["demonic_skull_farm"] and activity_name != herb_farm_activities or flower_farm_activities:
+    # if boost_on["demonic_skull_farming"] and activity_name != herb_farm_activities or flower_farm_activities:
     #     return False
-    if boost_on["demonic_skull_rc"] and activity_name not in abyss_rc_activities:
+    if boost_on["demonic_skull_farming"] and activity_name != farm_plot_activities:
         return False
-    if (boost_on["demonic_skull_agil"] or boost_on["wildy_sword"]) and activity_name not in "wilderness_agility":
+    if boost_on["demonic_skull_runecrafting"] and activity_name not in abyss_rc_activities:
         return False
-    if boost_on["demonic_skull_slay"] and activity_name not in wildy_slayer_activities:
+    if (boost_on["demonic_skull_agility"] or boost_on["wildy_sword"]) and activity_name not in "wilderness_agility":
+        return False
+    if boost_on["demonic_skull_slayer"] and activity_name not in wildy_slayer_activities:
         return False
     if boost_on["special_slayer_contract"] and activity_name not in chain(wildy_slayer_activities, slayer_tower_activities):
         return False
     if boost_on["morytania_legs_slayer"] and activity_name not in slayer_tower_activities:
         return False
     if boost_on["slayer_mask"] and activity_name not in slayer_mask_activities:
+        return False
+    if boost_on["slayer_codex"] and activity_name not in slayer_activities:
+        return False
+    if boost_on["juju_god_potion"] and activity_name not in hunter_activities:  # or others i forget
+        return False
+    if boost_on["enhanced_yaktwee"] and activity_name not in hunter_activities:
+        return False
+    if boost_on["brawlers"] and activity_name in rc_activities:  # could be others
+        return False
+    if boost_on["brassica"] and activity_name not in farm_plot_activities:
+        return False
+    if boost_on["prayer_aura"] and activity_name not in prayer_activities:
         return False
     return True
 
@@ -705,6 +726,8 @@ general_boost_iterables = dict(
     protean_trap=[0, 500],
     skillchompa=[0, 100],
     perfect_juju=[0, 50],
+    roar=[0, 250],
+    runecrafting_gloves=[0, 1000],
 )
 
 # each boost lists the order in which their state is the most to least preferable, for experiment design
@@ -763,25 +786,28 @@ boost_preferences = dict(
     protean_trap=[0, 500],
     skillchompa=[0, 100],
     perfect_juju=[0, 50],
+    roar=[0, 250],
+    runecrafting_gloves=[0, 1000],
 )
 
 # boost states that are currently unavailable to experimental design
 invalid_boosts = dict(
-    outfit=[10, 20, 30, 40, 50, 60],
+    outfit=[40, 60],
     avatar=[50, 40, 30],  # avatar bonus only 60 or 0 if max fealty
     yak_track=[0, 100],  # can't toggle yak track
-    bxp=[1000],
+    # bxp=[1000],
     # premier=[100],
-    coin=[20, 0],
-    sceptre=[40, 0],
-    worn_pulse=[500],
-    worn_cinder=[1500],
+    # coin=[20, 0],
+    # sceptre=[40, 0],
+    # worn_pulse=[500],
+    # worn_cinder=[1500],
     # pulse=[100,20,40,60,80],
     # cinder=[100,20,40,60,80]
     # wisdom=[0],
     # inspire=[20],
     prayer_aura=[25, 20, 10],
-    demonic_skull_agility=[range(40, 1960, 40)],
+    demonic_skull_agility=[range(40, 1960, 40)],  # i'm overlevelled for these
+    prime=[100, 1000],  # prime not in game anymore
 )
 
 # store the mutually exclusive boosts as an edge list for validation
@@ -836,8 +862,8 @@ mutually_exclusive_boosts_fully_connected_subgraphs = [
     {"worn_cinder", "worn_pulse", "sanctifier"},  # pocket slot
     {"ectofuntus", "powder", "gilded_altar", "chaos_altar", "sanctifier"},  # prayer base multipliers
     # mutually exclusive skull effects
-    {"demonic_skull_runecrating", "demonic_skull_farming", "demonic_skull_divination", "demonic_skull_hunter",
-     "demonic_skull_agility"},
+    {"demonic_skull_runecrafting", "demonic_skull_farming", "demonic_skull_divination", "demonic_skull_hunter",
+     "demonic_skull_agility", "demonic_skull_slayer"},
 ]
 
 
@@ -846,12 +872,14 @@ mutually_exclusive_boosts_fully_connected_subgraphs = [
 # perfect juju proven to come after vos, before portable
 # prayer auras are all 3 proven to be in the same spot
 # skillchompa proven before vos
+# not sure about demonic skull farming and brassica
 sota_model = dict(
-    base=[["skillchompa"], ["vos"], ["crystallise", "perfect_juju"], ["portable"], ["focus"], ["shared"], ["protean_trap"],
-          ["ectofuntus", "powder", "gilded_altar", "chaos_altar", "sanctifier", "dragon_rider"],
+    base=[["skillchompa"], ["vos"], ["crystallise", "perfect_juju"], ["portable"], ["focus"], ["shared"],
+          ["protean_trap"], ["ectofuntus", "powder", "gilded_altar", "chaos_altar", "sanctifier", "dragon_rider"],
           ["div_energy"], ["demonic_skull_divination", "demonic_skull_hunter", "demonic_skull_agility", "wildy_sword"]],
     additive1=[["yak_track", "prime", "scabaras", "bomb"]],
-    additive2=[["demonic_skull_runecrafting", "demonic_skull_farming", "demonic_skull_slayer", "brassica"]],
+    additive2=[["demonic_skull_runecrafting", "demonic_skull_farming", "demonic_skull_slayer", "brassica",
+                "runecrafting_gloves"]],
     additive3=[["juju_god_potion"]],
     constant=[],
     chain1=[["worn_pulse"], ["pulse"], ["sceptre"], ["coin"], ["torstol"]],
@@ -865,11 +893,12 @@ sota_model = dict(
 )
 
 test_model = dict(
-    base=[["vos"], ["crystallise", "perfect_juju"], ["portable"], ["focus"], ["shared"], ["protean_trap"],
-          ["ectofuntus", "powder", "gilded_altar", "chaos_altar", "sanctifier", "dragon_rider"],
+    base=[["skillchompa"], ["vos"], ["crystallise", "perfect_juju"], ["portable"], ["focus"], ["shared"],
+          ["protean_trap"], ["ectofuntus", "powder", "gilded_altar", "chaos_altar", "sanctifier", "dragon_rider"],
           ["div_energy"], ["demonic_skull_divination", "demonic_skull_hunter", "demonic_skull_agility", "wildy_sword"]],
     additive1=[["yak_track", "prime", "scabaras", "bomb"]],
-    additive2=[["demonic_skull_runecrafting", "demonic_skull_farming", "demonic_skull_slayer", "brassica"]],
+    additive2=[["demonic_skull_runecrafting", "demonic_skull_farming", "demonic_skull_slayer", "brassica",
+                "runecrafting_gloves"]],
     additive3=[["juju_god_potion"]],
     constant=[],
     chain1=[["worn_pulse"], ["pulse"], ["sceptre"], ["coin"], ["torstol"]],
@@ -902,11 +931,14 @@ counting_model = dict(first=[])
 
 
 # number of fields searched at once greatly increases search space, >A083355(n)
-# ['runecrafting_gloves', 'bonfire', 'dxp', 'furnace', 'collectors_insignia', 'fist_of_guthix', 'brooch',
-# 'dwarven_battleaxe', 'sharks_tooth_necklace', 'swift_sailfish', 'dragon-slayer_gloves', 'roar']
+remaining_fields = ['roar', 'bonfire', 'firemaking_familiar', 'tangled_fishbowl', 'swift_sailfish', 'dwarven_battleaxe',
+                    'brooch', 'furnace', 'sharks_tooth_necklace', 'collectors_insignia', 'fish_gloves',
+                    'dragon-slayer_gloves', 'dxp', 'raf']
 fields_to_add = []
 allowed_errors = 0
 allowed_tolerance = 0
+experiment_search_time = 60
+successor_generation_term_blacklist = []
 data_filename = 'data.csv'
 
 print('Loading data to test successor models against:')
@@ -933,8 +965,9 @@ print("\n")
 #       .format(fields_without_data, tracked_fields))
 
 print('Generating and testing successor models by adding {} to the test model...'.format(fields_to_add))
-successful_models = list(get_successors_reject_early(test_model, fields_to_add, data_points, [], allowed_errors,
-                                             allowed_tolerance))
+successful_models = list(
+    get_successors_reject_early(test_model, fields_to_add, data_points, successor_generation_term_blacklist,
+                                allowed_errors, allowed_tolerance))
 # successful_models = list(filter_models(all_successors, test_filtered_points, allowed_errors, allowed_tolerance))
 print("{} successor models {}, printing:".format(len(successful_models),
                                                 "with less than {} errors".format(allowed_errors) if len(successful_models) > 0 else "with no errors"))
@@ -985,27 +1018,48 @@ print("\n")
 # if all experiments produce one value for all models, something is wrong
 
 
-def boost_iterables_to_boost_value_tuples(boost_iterables):
-    for boost, levels in boost_iterables.items():
-        yield [(boost, level) for level in levels]
-
-
-# generate all valid boost combinations given a boost to iterable of values map
-# and a similar boost to value map of currently impossible values
-# also pass in the per_boost_depth to only calculate combinations based on the nth most preferred boost values per boost
-def generate_boost_combinations(boost_iterables, invalid_boost_values, tracked_boosts, per_boost_depth=0):
-    boosts_less_invalids = copy.deepcopy(boost_iterables)
-    for boost in list(boosts_less_invalids.keys()):
-        if boost not in tracked_boosts:
-            del boosts_less_invalids[boost]
+def get_experiment_sampler(to_prove, candidate_models, boost_iterables, invalid_boost_values,
+                           mutually_exclusive_boosts_edge_list,
+                           mutually_exclusive_boosts_fully_connected_subgraphs,
+                           activities):
+    tracked_boosts = set()
+    boosts_that_effect_placement = set()
+    boosts_that_effect_placement.add("bxp")
+    for model in candidate_models:
+        tracked_boosts.update(get_model_fields(model))
+        # weird heuristic to figure out which boosts to toggle in experiments
+        for term in model:
+            seen_boosts = set()
+            for i in range(len(model[term])):
+                group = model[term][i]
+                seen_boosts.update(group)
+                for to_prove_boost in to_prove:
+                    if to_prove_boost in group:
+                        boosts_that_effect_placement.update(seen_boosts)
+    tracked_boosts = list(tracked_boosts)
+    boosts_that_effect_placement = list(boosts_that_effect_placement)
+    print("Boosts that could affect placement:\n{}".format(boosts_that_effect_placement))
+    boosts_to_modulate = copy.deepcopy(boost_iterables)
+    for boost in list(boosts_to_modulate.keys()):
+        if boost not in tracked_boosts or boost not in boosts_that_effect_placement:
+            del boosts_to_modulate[boost]
     for boost, values in invalid_boost_values.items():
-        if boost in boosts_less_invalids:
-            boosts_less_invalids[boost] = list(filter(lambda boost: boost not in values, boosts_less_invalids[boost]))
-    if per_boost_depth > 0:
-        for boost in tracked_boosts:
-            boosts_less_invalids[boost] = boosts_less_invalids[boost][:per_boost_depth]
-    boost_value_product = product(*boost_iterables_to_boost_value_tuples(boosts_less_invalids))
-    return (dict(boost_value_tuples) for boost_value_tuples in boost_value_product)
+        if boost in boosts_to_modulate:
+            boosts_to_modulate[boost] = list(filter(lambda boost: boost not in values, boosts_to_modulate[boost]))
+    print("Boosts that aren't invalid and could affect placement:\n{}".format(boosts_to_modulate))
+    activities = list(activities.items())
+    while True:
+        boost_entry_generator = ((boost, random.choice(boosts_to_modulate[boost])) for boost in boosts_to_modulate)
+        boost_vals = dict.fromkeys(tracked_boosts, 0)
+        boost_vals.update(boost_entry_generator)
+        if not validate_boost_vals(boost_vals, mutually_exclusive_boosts_edge_list,
+                                   mutually_exclusive_boosts_fully_connected_subgraphs):
+            continue
+        activity = random.choice(activities)
+        experiment = dict(activity=activity, boost_vals=boost_vals)
+        if not validate_experiment(experiment):
+            continue
+        yield experiment
 
 
 def data_point_to_string_with_calculation(data_point, model, indent=0):
@@ -1030,23 +1084,19 @@ if len(successful_models) > 1:
     print("Attempting to narrow down the {} valid candidate models by generating you an experiment".format(
         len(successful_models)))
     print("Score is in the range of {}-0, with lower being better".format(len(successful_models) - 1))
-    # generate all possible boost levels
-    boost_combinations = generate_boost_combinations(boost_preferences, invalid_boosts, tracked_fields, 3)
-    # filter out boost combinations for which mutual exclusion rules have been violated
-    print("boost_combinations done")
-    boost_combinations = filter(lambda boost_vals: validate_boost_vals(boost_vals, mutually_exclusive_boosts_edge_list,
-                                                                       mutually_exclusive_boosts_fully_connected_subgraphs),
-                                boost_combinations)
-    print("boost_combinations filter done")
-    experiments_product = product(boost_combinations, activities.items())
-    print("product generator done")
-    experiment_dicts = (dict(activity=activity, boost_vals=boost_vals) for boost_vals, activity in experiments_product)
-    print("dict generator done")
-    experiment_dicts = filter(validate_experiment, experiment_dicts)
+
+    # generate random boost combos
+    infinite_experiment_sampler = get_experiment_sampler(fields_to_add, successful_models, boost_preferences,
+                                                         invalid_boosts, mutually_exclusive_boosts_edge_list,
+                                                         mutually_exclusive_boosts_fully_connected_subgraphs,
+                                                         activities)
 
     min_score = len(successful_models)-1
     experiment = {}
-    for experiment_dict in experiment_dicts:
+    start_time = time.time()
+    for experiment_dict in infinite_experiment_sampler:
+        if time.time() - start_time > experiment_search_time:
+            break
         boost_vals = experiment_dict["boost_vals"]
         activity_xp = experiment_dict["activity"][1]
         model_xps = {}
@@ -1058,7 +1108,10 @@ if len(successful_models) > 1:
         if score < min_score:
             experiment = experiment_dict
             min_score = score
-            print("score:", score, experiment)
+            print("score:", score)
+            print("experiment:")
+            print(json.dumps(experiment["activity"]))
+            print(boost_vals_to_string(experiment['boost_vals'], 1))
 
     if experiment:
         test_point_successors = [(get_xp(experiment["activity"][1], model, experiment['boost_vals']), model) for model in successful_models]
@@ -1068,7 +1121,8 @@ if len(successful_models) > 1:
         print(json.dumps(experiment["activity"]))
         print(boost_vals_to_string(experiment['boost_vals'], 1))
     else:
-        print("No experiments found to help narrow down the {} remaining models".format(len(successful_models)))
+        print("No experiments found to help narrow down the {} remaining models in {} seconds".format(
+            len(successful_models), experiment_search_time))
 else:
     print("Number of successful models is {}, no need to generate experiments.".format(len(successful_models)))
 print("\n")
@@ -1119,31 +1173,4 @@ else:
     with open(lua_filename, "w") as f:
         f.write(model_to_program(sota_model, general_boost_iterables, biggest_point))
     print("Lua version of the sota model with the most complex data point written to {}".format(lua_filename))
-
-slayer_mask_to_xp_map = {
-    10: [49.8, 52.2, 57.6, 61.0, 294.4],  # dagannoth, mountain trolls, black demons
-    50: [7.6, 9.2],  # crawling hands
-    150: [],
-    250: [],
-    400: [],
-    500: [],
-    520: [],
-    600: [],
-    650: [],
-    670: [],
-    700: [],
-    730: [],
-    750: [],
-    770: [],
-    780: [],
-    800: [],
-    850: [],
-    860: [],
-    900: [],
-    910: [],
-    920: [],
-    930: [],
-    950: []
-
-}
 
