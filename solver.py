@@ -6,6 +6,63 @@ from itertools import chain, combinations, product, zip_longest
 from collections import defaultdict
 import random
 import time
+from functools import cache, wraps
+
+
+def possibly_nested_value_dispatcher(possibly_nested_possibly_hashable_value):
+    if isinstance(possibly_nested_possibly_hashable_value, list):
+        return possibly_nested_list_to_hashable(possibly_nested_possibly_hashable_value)
+    elif isinstance(possibly_nested_possibly_hashable_value, dict):
+        return possibly_nested_dict_to_hashable(possibly_nested_possibly_hashable_value)
+    elif isinstance(possibly_nested_possibly_hashable_value, set):
+        return possibly_nested_set_to_hashable(possibly_nested_possibly_hashable_value)
+    elif not hasattr(possibly_nested_possibly_hashable_value, "__hash__"):
+        raise Exception("Unhashable type {} found in nested structure".format(type(possibly_nested_possibly_hashable_value)))
+    else:
+        return possibly_nested_possibly_hashable_value
+
+
+def possibly_nested_list_to_hashable(possibly_nested_list):
+    return tuple(
+        possibly_nested_value_dispatcher(possibly_hashable_value) for possibly_hashable_value in possibly_nested_list)
+
+
+# take a dict that has non hashable nested types and return the hashable nested version of it
+def possibly_nested_dict_to_hashable(possibly_nested_dict):
+    return frozenset((hashable_key, possibly_nested_value_dispatcher(possibly_hashable_value)) for
+                     hashable_key, possibly_hashable_value in possibly_nested_dict.items())
+
+
+# take a dict that has non hashable nested types and return the hashable nested version of it
+def possibly_nested_set_to_hashable(possibly_nested_set):
+    return frozenset(
+        possibly_nested_value_dispatcher(possibly_hashable_value) for possibly_hashable_value in possibly_nested_set)
+
+
+# dict hashing for caching
+def hash_nested(func):
+    """Transform mutable nested structure
+    Into immutable
+    Useful to be compatible with cache
+    """
+    class HDict(dict):
+        def __hash__(self):
+            return hash(possibly_nested_value_dispatcher(self))
+
+    class HSet(set):
+        def __hash__(self):
+            return hash(possibly_nested_value_dispatcher(self))
+
+    class HList(list):
+        def __hash__(self):
+            return hash(possibly_nested_value_dispatcher(self))
+
+    @wraps(func)
+    def wrapped(*args, **kwargs):
+        args = tuple([HDict(arg) if isinstance(arg, dict) else HSet(arg) if isinstance(arg, set) else HList(arg) if isinstance(arg, list) else arg for arg in args])
+        kwargs = {k: HDict(v) if isinstance(v, dict) else HSet(v) if isinstance(v, set) else HList(v) if isinstance(v, list) else v for k, v in kwargs.items()}
+        return func(*args, **kwargs)
+    return wrapped
 
 
 def inclusive_range(start, stop, step):
@@ -178,7 +235,8 @@ def get_xp(base, model, boost_vals):
     base_tuples = list(filter(lambda base_tuple: max(base_tuple) > 0, base_tuples))
     outer_total = 0
     outer_bonus = 0
-    for inner_base, inner_pre_constant, inner_post_constant in base_tuples:
+    for i in range(len(base_tuples)):
+        inner_base, inner_pre_constant, inner_post_constant = base_tuples[i]
         base = apply(inner_base + inner_pre_constant, model['base'], boost_vals) + inner_post_constant
         additive_terms = filter(lambda termname: termname.startswith("additive"), model.keys())
         additive_term_values = [apply(base, model[additive_term], boost_vals) - base for additive_term in additive_terms]
@@ -277,7 +335,6 @@ def get_successors_reject_early(starting_model, fields, data_points, filtered_te
             next_successors.extend(get_single_generation_of_successors(model, field, filtered_terms))
             i += 1
         models = list(filter_models(next_successors, reduced_data_points, allowed_errors, allowed_tolerance))
-        print(models)
     return models
 
 
@@ -479,6 +536,19 @@ mining_activities = {
 
 }
 
+anachronia_jadinko_activities = {
+    "common_jadinko": 2000,
+    "shadow_jadinko": 4730,
+    "igneous_jadinko": 5000,
+    "cannibal_jadinko": 5100,
+    "aquatic_jadinko": 5700,
+    "amphibious_jadinko": 4500,
+    "carrion_jadinko": 6350,
+    "diseased_jadinko": 5000,
+    "camouflaged_jadinko": 5150,
+    "draconic_jadinko": 5540,
+}
+
 hunter_activities = {
     "polar_kebbit": 150,
     "common_kebbit": 360,
@@ -490,6 +560,8 @@ hunter_activities = {
     "dark_kebbit": 990,
     "dashing_kebbit": 1560,
 }
+
+hunter_activities.update(anachronia_jadinko_activities)
 
 dragon_bone_activities = {
     "baby_dragon_bones": 300,
@@ -561,7 +633,7 @@ farm_plot_activities = {}
 farm_activities = {}
 farm_activities.update(farm_plot_activities)
 
-activities = {"water_rune" : 60}
+activities = {}
 # activities.update(wc_activities)
 # activities.update(fishing_activities)
 # activities.update(mining_activities)
@@ -572,21 +644,18 @@ activities = {"water_rune" : 60}
 # activities.update(prayer_activities)
 # activities.update(slayer_activities)
 # activities.update(farm_activities
+activities = {"draconic_jadinko": 5540}
+# activities = anachronia_jadinko_activities
 
 
 def get_boost_on_default_dict(boost_vals):
-    boost_on = defaultdict(int)
-    boost_on.update(
-        map(lambda boost_val_entry: (boost_val_entry[0], boost_val_entry[1] > 0), boost_vals.items()))
-    return boost_on
-
+    return dict(map(lambda boost_val_entry: (boost_val_entry[0], boost_val_entry[1] > 0), boost_vals.items()))
 
 
 def get_list_of_boosts_on(boost_on_default_dict):
     return list(map(lambda boost_item: boost_item[0], filter(lambda boost_item: boost_item[1], boost_on_default_dict.items())))
 
 
-# function to quickly test a mutex
 def validate_mutex_set(mutex_set, inclusion_dict):
     count = 0
     for field in mutex_set:
@@ -597,14 +666,26 @@ def validate_mutex_set(mutex_set, inclusion_dict):
     return True
 
 
+# @hash_nested
+# @cache
+def validate_mutex_edge_list(boost_on, mutex_boost_edge_list):
+    return all(not all(boost_on[boost] for boost in edge) for edge in mutex_boost_edge_list)
+
+
+# @hash_nested
+# @cache
+def validate_mutex_clique_list(boost_on, mutex_boost_clique_list):
+    return all(validate_mutex_set(mutex_set, boost_on) for mutex_set in mutex_boost_clique_list)
+
+
 # return false if an impossible boost state is defined
 def validate_boost_vals(boost_vals, mutex_boost_edge_list, mutex_boost_clique_list):
     boost_on = get_boost_on_default_dict(boost_vals)
-    boosts_on = get_boost_on_default_dict(boost_on)
-    if not all(not all(boost_on[boost] for boost in edge) for edge in mutex_boost_edge_list):
+    boosts_on = get_list_of_boosts_on(boost_on)
+    if not validate_mutex_edge_list(boost_on, mutex_boost_edge_list):
         return False
 
-    if not all(validate_mutex_set(mutex_set, boost_on) for mutex_set in mutex_boost_clique_list):
+    if not validate_mutex_clique_list(boost_on, mutex_boost_clique_list):
         return False
 
     # ectofuntus doesn't stack with anything at all, not even really a boost
@@ -636,7 +717,9 @@ def validate_experiment(experiment):
             and ((boost_vals_["crystallise"] in [500, 875] and activity_name not in list(chain(wc_activities, fishing_activities, hunter_activities)))  # fish/hunt too
                  or (boost_vals_["crystallise"] in [200, 400] and activity_name not in mining_activities)):
         return False
-    if boost_on["ectofuntus"] and activity_name not in prayer_activities:
+    if (boost_on["ectofuntus"] or boost_on["gilded_altar"] or boost_on["chaos_altar"]) and activity_name not in prayer_activities:
+        return False
+    if boost_on["dragon_rider"] and activity_name not in dragon_bone_activities:
         return False
     if boost_on["demonic_skull_divination"] and activity_name != "cursed_memory":
         return False
@@ -660,7 +743,7 @@ def validate_experiment(experiment):
         return False
     if boost_on["slayer_codex"] and activity_name not in slayer_activities:
         return False
-    if boost_on["juju_god_potion"] and activity_name not in hunter_activities:  # or others i forget
+    if (boost_on["juju_god_potion"] or boost_on["zamoraks_favour"]) and activity_name not in anachronia_jadinko_activities:  # or others i forget
         return False
     if boost_on["enhanced_yaktwee"] and activity_name not in hunter_activities:
         return False
@@ -669,6 +752,8 @@ def validate_experiment(experiment):
     if boost_on["brassica"] and activity_name not in farm_plot_activities:
         return False
     if boost_on["prayer_aura"] and activity_name not in prayer_activities:
+        return False
+    if boost_on["skillchompa"] and activity_name not in list(chain(wc_activities, arch_activities, mining_activities)):  # div_activities
         return False
     return True
 
@@ -728,6 +813,7 @@ general_boost_iterables = dict(
     perfect_juju=[0, 50],
     roar=[0, 250],
     runecrafting_gloves=[0, 1000],
+    zamoraks_favour=[0, 100],
 )
 
 # each boost lists the order in which their state is the most to least preferable, for experiment design
@@ -788,6 +874,7 @@ boost_preferences = dict(
     perfect_juju=[0, 50],
     roar=[0, 250],
     runecrafting_gloves=[0, 1000],
+    zamoraks_favour=[0, 100],
 )
 
 # boost states that are currently unavailable to experimental design
@@ -795,14 +882,16 @@ invalid_boosts = dict(
     outfit=[40, 60],
     avatar=[50, 40, 30],  # avatar bonus only 60 or 0 if max fealty
     yak_track=[0, 100],  # can't toggle yak track
-    # bxp=[1000],
+    wise=[10, 20, 30],
+    bxp=[1000],
     # premier=[100],
     # coin=[20, 0],
     # sceptre=[40, 0],
     # worn_pulse=[500],
     # worn_cinder=[1500],
-    # pulse=[100,20,40,60,80],
-    # cinder=[100,20,40,60,80]
+    # pulse=[100, 20, 40, 60, 80],
+    # cinder=[100, 20, 40, 60, 80],
+    # torstol=[20, 15, 10],
     # wisdom=[0],
     # inspire=[20],
     prayer_aura=[25, 20, 10],
@@ -849,10 +938,12 @@ mutually_exclusive_boosts_edge_list = {
     ("sanctifier", "portable"),  # can't bury bones with a portable
     ("sanctifier", "crystallise"),  # can't crystallise the bones
     ("sanctifier", "shared"),  # no bone div loc
-    # other
     ("demonic_skull_agility", "brawlers"),  # demonic skull doesn't work with at least agility brawlers
     ("demonic_skull_slayer", "morytania_legs_slayer"),  # wildy and slayer tower separate locations
     ("slayer_codex", "outfit"),  # likely the same exact boost, but needed to prove they're the same
+    ("protean_trap", "crystallise"),  # can't crystallise a protean trap
+    ("protean_trap", "shared"),  # can't protean trap a div loc
+    ("protean_trap", "roar"),  # roar and protean trap don't stack (goes to trap i think)
 }
 
 # for compactness, some fully connected subgraphs of the mutually exclusive boost graph are represented here as sets
@@ -874,9 +965,9 @@ mutually_exclusive_boosts_fully_connected_subgraphs = [
 # skillchompa proven before vos
 # not sure about demonic skull farming and brassica
 sota_model = dict(
-    base=[["skillchompa"], ["vos"], ["crystallise", "perfect_juju"], ["portable"], ["focus"], ["shared"],
-          ["protean_trap"], ["ectofuntus", "powder", "gilded_altar", "chaos_altar", "sanctifier", "dragon_rider"],
-          ["div_energy"], ["demonic_skull_divination", "demonic_skull_hunter", "demonic_skull_agility", "wildy_sword"]],
+    base=[["skillchompa"], ["vos"], ["crystallise", "perfect_juju"], ["portable"], ["focus"], ["shared"], ["protean_trap", "roar"],
+          ["ectofuntus", "powder", "gilded_altar", "chaos_altar", "sanctifier", "dragon_rider"], ["div_energy"],
+          ["demonic_skull_divination", "demonic_skull_hunter", "demonic_skull_agility", "wildy_sword"]],
     additive1=[["yak_track", "prime", "scabaras", "bomb"]],
     additive2=[["demonic_skull_runecrafting", "demonic_skull_farming", "demonic_skull_slayer", "brassica",
                 "runecrafting_gloves"]],
@@ -893,9 +984,9 @@ sota_model = dict(
 )
 
 test_model = dict(
-    base=[["skillchompa"], ["vos"], ["crystallise", "perfect_juju"], ["portable"], ["focus"], ["shared"],
-          ["protean_trap"], ["ectofuntus", "powder", "gilded_altar", "chaos_altar", "sanctifier", "dragon_rider"],
-          ["div_energy"], ["demonic_skull_divination", "demonic_skull_hunter", "demonic_skull_agility", "wildy_sword"]],
+    base=[["skillchompa"], ["vos"], ["crystallise", "perfect_juju"], ["portable"], ["focus"], ["shared"], ["protean_trap", "roar"],
+          ["ectofuntus", "powder", "gilded_altar", "chaos_altar", "sanctifier", "dragon_rider"], ["div_energy"],
+          ["demonic_skull_divination", "demonic_skull_hunter", "demonic_skull_agility", "wildy_sword"]],
     additive1=[["yak_track", "prime", "scabaras", "bomb"]],
     additive2=[["demonic_skull_runecrafting", "demonic_skull_farming", "demonic_skull_slayer", "brassica",
                 "runecrafting_gloves"]],
@@ -931,21 +1022,22 @@ counting_model = dict(first=[])
 
 
 # number of fields searched at once greatly increases search space, >A083355(n)
-remaining_fields = ['roar', 'bonfire', 'firemaking_familiar', 'tangled_fishbowl', 'swift_sailfish', 'dwarven_battleaxe',
+remaining_fields = ['bonfire', 'firemaking_familiar', 'tangled_fishbowl', 'swift_sailfish', 'dwarven_battleaxe',
                     'brooch', 'furnace', 'sharks_tooth_necklace', 'collectors_insignia', 'fish_gloves',
                     'dragon-slayer_gloves', 'dxp', 'raf']
 fields_to_add = []
 allowed_errors = 0
 allowed_tolerance = 0
-experiment_search_time = 60
-successor_generation_term_blacklist = []
+experiment_search_time = 0
+successor_generation_term_blacklist = ["mitosis_percent", "mitosis_pre_constant", "mitosis_post_constant"]
 data_filename = 'data.csv'
 
 print('Loading data to test successor models against:')
 data_points = get_data_points(data_filename)
 print('{} data points loaded from {}'.format(len(data_points), data_filename))
 # get the list of fields we're modeling
-tracked_fields = list(get_model_fields(test_model)) + fields_to_add
+starting_model_fields = list(get_model_fields(test_model))
+tracked_fields = starting_model_fields + fields_to_add
 print("Filtering data that uses boosts we aren't currently exploring:\n{}".format(tracked_fields))
 test_filtered_points = list(filter_data_points(tracked_fields, data_points))
 test_filtered_boosts = get_data_points_boost_complement(tracked_fields, data_points)
@@ -959,10 +1051,16 @@ print('Starting test model:')
 print(model_to_string(test_model))
 print("\n")
 
-# fields_without_data = get_fields_without_data(tracked_fields, test_filtered_points)
-# if len(fields_without_data) > 1 or (len(fields_without_data) > 0 and "bxp" not in fields_without_data):
-#     raise Exception("Fields {} have no data for the current filtering, data points containing only the boosts {}"
-#       .format(fields_without_data, tracked_fields))
+
+for field in fields_to_add:
+    if field in starting_model_fields:
+        raise Exception("Field '{}' already in starting model".format(field))
+
+fields_without_data = get_fields_without_data(tracked_fields, test_filtered_points)
+new_fields_without_data = list(set(fields_without_data).intersection(set(fields_to_add)))
+if len(new_fields_without_data) > 1 or (len(new_fields_without_data) > 0 and "bxp" not in new_fields_without_data):
+    raise Exception("New fields {} have no data for the current filtering"
+                    .format(new_fields_without_data))
 
 print('Generating and testing successor models by adding {} to the test model...'.format(fields_to_add))
 successful_models = list(
@@ -1008,15 +1106,6 @@ print("Generating all subsets of {} to help with experiment design:".format(fiel
 [print(subset) for subset in minimize_transitions(field_powerset, fields_for_powerset)]
 print("\n")
 
-# next up, experiment suggester
-# first, generate candidate models that could explain all data with new boosts (we already do this)
-# next, generate all possible sets of boosts and activity xps, these are all possible experiments
-# test the candidate models for all experiments
-# choose the experiment that produces the widest array of different xp values for all models
-# i.e. choose the experiment that minimizes the largest number of models producing the same xp
-# if there are multiple experiments which produce optimal results, sort by how annoying it is to do an experiment
-# if all experiments produce one value for all models, something is wrong
-
 
 def get_experiment_sampler(to_prove, candidate_models, boost_iterables, invalid_boost_values,
                            mutually_exclusive_boosts_edge_list,
@@ -1027,16 +1116,22 @@ def get_experiment_sampler(to_prove, candidate_models, boost_iterables, invalid_
     boosts_that_effect_placement.add("bxp")
     for model in candidate_models:
         tracked_boosts.update(get_model_fields(model))
-        # weird heuristic to figure out which boosts to toggle in experiments
-        for term in model:
-            seen_boosts = set()
-            for i in range(len(model[term])):
-                group = model[term][i]
-                seen_boosts.update(group)
-                for to_prove_boost in to_prove:
-                    if to_prove_boost in group:
-                        boosts_that_effect_placement.update(seen_boosts)
+    boosts_that_effect_placement.update(tracked_boosts)
+    all_boosts = set(tracked_boosts)
+    for mutex_edge in mutually_exclusive_boosts_edge_list:
+        for edge_boost in mutex_edge:
+            all_boosts.add(edge_boost)
+        for to_prove_boost in to_prove:
+            if to_prove_boost in mutex_edge:
+                boosts_that_effect_placement.difference_update(mutex_edge)
+    for mutex_set in mutually_exclusive_boosts_fully_connected_subgraphs:
+        for set_boost in mutex_set:
+            all_boosts.add(set_boost)
+        for to_prove_boost in to_prove:
+            if to_prove_boost in mutex_set:
+                boosts_that_effect_placement.difference_update(mutex_set)
     tracked_boosts = list(tracked_boosts)
+    boosts_that_effect_placement.update(to_prove)
     boosts_that_effect_placement = list(boosts_that_effect_placement)
     print("Boosts that could affect placement:\n{}".format(boosts_that_effect_placement))
     boosts_to_modulate = copy.deepcopy(boost_iterables)
@@ -1048,13 +1143,21 @@ def get_experiment_sampler(to_prove, candidate_models, boost_iterables, invalid_
             boosts_to_modulate[boost] = list(filter(lambda boost: boost not in values, boosts_to_modulate[boost]))
     print("Boosts that aren't invalid and could affect placement:\n{}".format(boosts_to_modulate))
     activities = list(activities.items())
+    print("Finding first sample:")
+    i = 0
+    experiment_phase = False
     while True:
+        i += 1
+        if i % 10000 == 0:
+            print("." if not experiment_phase else ":", end="")
+            experiment_phase = False
         boost_entry_generator = ((boost, random.choice(boosts_to_modulate[boost])) for boost in boosts_to_modulate)
-        boost_vals = dict.fromkeys(tracked_boosts, 0)
+        boost_vals = dict.fromkeys(all_boosts, 0)
         boost_vals.update(boost_entry_generator)
         if not validate_boost_vals(boost_vals, mutually_exclusive_boosts_edge_list,
                                    mutually_exclusive_boosts_fully_connected_subgraphs):
             continue
+        experiment_phase = True
         activity = random.choice(activities)
         experiment = dict(activity=activity, boost_vals=boost_vals)
         if not validate_experiment(experiment):
@@ -1093,9 +1196,12 @@ if len(successful_models) > 1:
 
     min_score = len(successful_models)-1
     experiment = {}
+    print("Initializing the sampler...")
+    next(infinite_experiment_sampler)  # prime the sampler, takes a while for large amounts of models
+    print("Sampler initialized. Starting timer")
     start_time = time.time()
     for experiment_dict in infinite_experiment_sampler:
-        if time.time() - start_time > experiment_search_time:
+        if experiment_search_time != 0 and time.time() - start_time > experiment_search_time:
             break
         boost_vals = experiment_dict["boost_vals"]
         activity_xp = experiment_dict["activity"][1]

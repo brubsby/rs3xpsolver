@@ -1,4 +1,4 @@
-xp	(bonus)	base	bxp	dxp	bomb	yak_track	torstol	premier	avatar	worn_pulse	pulse	worn_cinder	cinder	sceptre	coin	outfit	raf	prayer_aura	wise	shared	vos	brawlers	inspire	wisdom	scabaras	prime	focus	portable	crystallise	ectofuntus	powder	gilded_altar	chaos_altar	sanctifier	dragon_rider	demonic_skull_runecrafting	demonic_skull_divination	div_energy	demonic_skull_farming	demonic_skull_hunter	demonic_skull_agility	wildy_sword	demonic_skull_slayer	special_slayer_contract	slayer_codex	morytania_legs_slayer	slayer_mask	brassica	juju_god_potion	enhanced_yaktwee	protean_trap	skillchompa	perfect_juju	roar	runecrafting_gloves
+xp	(bonus)	base	bxp	dxp	bomb	yak_track	torstol	premier	avatar	worn_pulse	pulse	worn_cinder	cinder	sceptre	coin	outfit	raf	prayer_aura	wise	shared	vos	brawlers	inspire	wisdom	scabaras	prime	focus	portable	crystallise	ectofuntus	powder	gilded_altar	chaos_altar	sanctifier	dragon_rider	demonic_skull_runecrafting	demonic_skull_divination	div_energy	demonic_skull_farming	demonic_skull_hunter	demonic_skull_agility	wildy_sword	demonic_skull_slayer	special_slayer_contract	slayer_codex	morytania_legs_slayer	slayer_mask	brassica	juju_god_potion	enhanced_yaktwee	protean_trap	skillchompa	perfect_juju	roar	runecrafting_gloves	zamoraks_favour
 175.0	0.0	175.0
 210.0	35.0	175.0				0.2
 218.7	43.7	175.0				0.2			0.05
@@ -272,13 +272,6 @@ xp	(bonus)	base	bxp	dxp	bomb	yak_track	torstol	premier	avatar	worn_pulse	pulse	w
 4308.0	2513.0	1795.0	1			0.2																			0.1																								0.1
 80633.0	45575.1	35057.9	1			0.2																																										0.1
 77127.3	42069.4	35057.9	1			0.2
-762.0	127.0	635.0				0.2
-774.7	139.7	635.0				0.2																																												0.02
-781.0	146.0	635.0				0.2										0.01																																		0.02
-918.0	283.0	635.0				0.2	0.005		0.06		0.1		0.1			0.01			0.04																															0.02
-935.9	300.9	635.0				0.2	0.005		0.06		0.1		0.1			0.01			0.04					0.025																										0.02
-1169.9	376.2	635.0				0.2	0.005		0.06		0.1		0.1			0.01			0.04					0.025																										0.02	0.25
-1249.2	455.5	635.0				0.2	0.005		0.06		0.1		0.1			0.01			0.04					0.025																									0.1	0.02	0.25
 544.3	351.8	175.0	1			0.2	0.005		0.06		0.1		0.1			0.01			0.04					0.025																												0.1
 36.5	10.1	24.0				0.2			0.06		0.1		0.1											0.025																												0.1
 1746.3	360.3	1000.0				0.2			0.06												0.2							0.1																									0.05
@@ -288,11 +281,21 @@ xp	(bonus)	base	bxp	dxp	bomb	yak_track	torstol	premier	avatar	worn_pulse	pulse	w
 535.8	304.8	175.0	1			0.2			0.06												0.2																															0.1
 765.6	435.6	250.0	1			0.2			0.06												0.2																															0.1
 1017.9	579.1	332.5	1			0.2			0.06												0.2																															0.1
-1222.2	428.5	635.0				0.2			0.06		0.1		0.1			0.01			0.04																														0.1	0.02	0.25			0.25
-1206.4	412.7	635.0				0.2			0.06		0.1		0.1			0.01			0.04																														0.1	0.02				0.25
-1147.5	353.8	635.0				0.2			0.06		0.1		0.1																																				0.1					0.25
-1031.7	238.0	635.0				0.2					0.1		0.1																																									0.25
 13.2	7.2	6.0				0.2																																																	1
 29.0	23.0	6.0				0.2			0.06							0.05			0.04																	2.5																			1
 29.3	23.3	6.0				0.2	0.005		0.06		0.04					0.05			0.04																	2.5																			1
 29.9	23.9	6.0				0.2	0.005		0.06		0.04					0.05			0.04						0.1											2.5																			1
+952.4	158.7	635.0				0.2																																													0.25
+1031.7	238.0	635.0				0.2																																											0.1		0.25
+762.0	127.0	635.0				0.2
+952.4	158.7	635.0				0.2																																													0.25
+825.5	190.5	635.0				0.2																																											0.1
+976.2	182.5	635.0				0.2										0.01																																		0.02				0.25
+952.4	158.7	635.0				0.2																																																0.25
+1087.2	293.5	635.0				0.2										0.01			0.04																														0.1	0.02	0.25
+873.0	238.0	635.0				0.2	0.005									0.01			0.04																														0.1	0.02
+1143.9	350.2	635.0				0.2	0.02				0.08					0.02																																	0.1	0.02	0.25
+1167.7	374.0	635.0				0.2	0.02				0.08					0.01			0.04																														0.1	0.02	0.25
+1507.8	714.1	635.0				0.2	0.02			0.5						0.01			0.04																														0.1	0.02	0.25
+798.5	244.5	554.0				0.2	0.02				0.08					0.02																																	0.1	0.02
+1223.4	429.7	635.0				0.2	0.02		0.06		0.08					0.01			0.04																														0.1	0.02	0.25
