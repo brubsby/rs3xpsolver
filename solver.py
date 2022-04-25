@@ -416,10 +416,9 @@ def model_to_program(model, ranges, data_point=None):
     variables_string += "-- the logic for which boosts are mutually exclusive is not embedded into this program\n"
     variables_string += "-- so it is assumed you ensure your inputs are valid (e.g. no chaos altar and gilded altar)\n"
     variables_string += \
-        "\n".join("{} = {}".format(field, data_point["boost_vals"][field]).ljust(28) + "  -- {}".format(range_to_comment_string(ranges[field])) for field in get_model_fields(model))
+        "\n".join("{} = {}".format(field, data_point["boost_vals"][field]).ljust(30) + "  -- {}".format(range_to_comment_string(ranges[field])) for field in get_model_fields(model))
 
-    base_string = "base = {}".format(data_point["xp_vals"]["base"]) + "  -- activity xp\n"
-    base_string += term_to_program_string('base', 'base', model['base'])
+    base_string = term_to_program_string('base', 'base', model['base'])
     additives = list(filter(lambda term_name: term_name.startswith("additive") and model[term_name], model.keys()))
     additive_strings = "\n".join(term_to_program_string('base', additive_term, model[additive_term]) + "\n{} = {} - base".format(additive_term, additive_term) for additive_term in additives)
     additive_strings += "\nadditive = {}".format(" + ".join(additives))
@@ -432,26 +431,53 @@ def model_to_program(model, ranges, data_point=None):
         term_to_program_string('multiplicative', 'bonus', model['bonus']) or "bonus = multiplicative", "  ")
     bonus_strings += "\nend"
     total_strings = 'total = additive + multiplicative + bonus\n' \
-                    'print("+" .. total/10 .. " xp (" .. (total - base)/10 .. " bonus xp)")\n' \
-                    '-- given example should come out to {}'.format(format_xp_tuple((data_point["xp_vals"]["xp"], data_point["xp_vals"]["(bonus)"])))
-    model_string = """
--- all xp values in the game engine are represented as "lots of tenths" integers (e.g. 383.5 xp is represented as 3835)
+                    'return total, total - base'
+    xpdrop_string = """function xpdrop(base)\n{}\nend""".format(textwrap.indent("""{}
 {}
 {}
 {}
 {}
-{}
-{}
-""".format(base_string, additive_strings, chains_strings, multiplicative_strings, bonus_strings, total_strings)
+{}""".format(base_string, additive_strings, chains_strings, multiplicative_strings, bonus_strings, total_strings), 4*" "))
+
+    num_mitosis_groups = max(map(lambda term_name: len(model[term_name]),
+                                 filter(lambda term_name: term_name.startswith("mitosis") and model[term_name],
+                                        model.keys())))
+    xpfunction_arglists = []
+    for index in range(num_mitosis_groups):
+        arglist = model["mitosis_pre_constant"][index] + list(map(lambda boost_name: "scale(base, {}, 1000)".format(boost_name), model["mitosis_percent"][index]))
+        xpfunction_arglists.append(arglist)
+    if len(xpfunction_arglists) == 0:
+        xpfunction_arglists.append([])
+    xpfunction_arglists[0].insert(0, "base")
+    xpfunction_calls = ["xpdrop({})".format(" + ".join(xpfunction_arglists[index])) for index in range(num_mitosis_groups)]
+    return_line = "    return {}, {}".format("total1", " + ".join(
+        ["bonus1"] + list(flatten([["total{}".format(index), "bonus{}".format(index)] for index in range(2, num_mitosis_groups + 1)]))))
+
+    xpfunction_string = """function xp(base)\n{}\n{}\nend""".format(textwrap.indent("\n".join(
+        "total{}, bonus{} = {}".format(index + 1, index + 1, xpfunction_calls[index]) for index in
+        range(num_mitosis_groups)), " "*4), return_line)
+
+    calling_code = 'base = {}   -- activity xp\n' \
+                   'total, bonus = xp(base)\n' \
+                   'print("+" .. total/10 .. " xp (" .. bonus/10 .. " bonus xp)")\n' \
+                   '-- given example should come out to {}'.format(data_point["xp_vals"]["base"],
+                                                                   format_xp_tuple((data_point["xp_vals"]["xp"],
+                                                                                    data_point["xp_vals"]["(bonus)"])))
 
     return """
 function scale(xp, numerator, denominator)
     return xp * numerator // denominator
 end
 
+-- all xp values in the game engine are represented as "lots of tenths" integers (e.g. 383.5 xp is represented as 3835)
 {}
+
 {}
-""".format(variables_string, model_string)
+
+{}
+
+{}
+""".format(variables_string, xpdrop_string, xpfunction_string, calling_code)
 
 
 # activity base xps stored in this manner to assist experiment generation and writing of boost mutual exclusion rules
@@ -814,6 +840,7 @@ general_boost_iterables = dict(
     roar=[0, 250],
     runecrafting_gloves=[0, 1000],
     zamoraks_favour=[0, 100],
+    bonfire=[0, 10, 20, 30, 40],
 )
 
 # each boost lists the order in which their state is the most to least preferable, for experiment design
@@ -875,6 +902,7 @@ boost_preferences = dict(
     roar=[0, 250],
     runecrafting_gloves=[0, 1000],
     zamoraks_favour=[0, 100],
+    bonfire=[0, 10, 20, 30, 40],
 )
 
 # boost states that are currently unavailable to experimental design
@@ -912,7 +940,7 @@ mutually_exclusive_boosts_edge_list = {
     ("shared", "portable"),  # can't put div locs into a portable
     ("portable", "focus"),  # you wouldn't summon a portable
     # prayer
-    ("ectofuntus", "yak_track"),  # ectofuntus not in prif
+    ("ectofuntus", "yak_track"),  # ectofuntus can't have anything
     ("ectofuntus", "vos"),  # ectofuntus not in prif
     ("ectofuntus", "portable"),  # ectofuntus not a portable
     ("ectofuntus", "crystallise"),  # can't crystallise the ectofuntus
@@ -979,8 +1007,8 @@ sota_model = dict(
     multiplicative=[["avatar"]],
     bonus=[["worn_cinder"], ["cinder"]],
     mitosis_percent=[["morytania_legs_slayer"], [], ["special_slayer_contract"]],
-    mitosis_pre_constant=[[], [], []],
-    mitosis_post_constant=[[], ["slayer_mask"], []],
+    mitosis_pre_constant=[[], ["slayer_mask"], []],
+    mitosis_post_constant=[[], [], []],
 )
 
 test_model = dict(
@@ -1022,13 +1050,13 @@ counting_model = dict(first=[])
 
 
 # number of fields searched at once greatly increases search space, >A083355(n)
-remaining_fields = ['bonfire', 'firemaking_familiar', 'tangled_fishbowl', 'swift_sailfish', 'dwarven_battleaxe',
+remaining_fields = ['firemaking_familiar', 'tangled_fishbowl', 'swift_sailfish', 'dwarven_battleaxe',
                     'brooch', 'furnace', 'sharks_tooth_necklace', 'collectors_insignia', 'fish_gloves',
-                    'dragon-slayer_gloves', 'dxp', 'raf']
-fields_to_add = []
+                    'dragon_slayer_gloves', 'dxp', 'raf']
+fields_to_add = ['bonfire']
 allowed_errors = 0
 allowed_tolerance = 0
-experiment_search_time = 0
+experiment_search_time = 1
 successor_generation_term_blacklist = ["mitosis_percent", "mitosis_pre_constant", "mitosis_post_constant"]
 data_filename = 'data.csv'
 
@@ -1058,9 +1086,9 @@ for field in fields_to_add:
 
 fields_without_data = get_fields_without_data(tracked_fields, test_filtered_points)
 new_fields_without_data = list(set(fields_without_data).intersection(set(fields_to_add)))
-if len(new_fields_without_data) > 1 or (len(new_fields_without_data) > 0 and "bxp" not in new_fields_without_data):
-    raise Exception("New fields {} have no data for the current filtering"
-                    .format(new_fields_without_data))
+# if len(new_fields_without_data) > 1 or (len(new_fields_without_data) > 0 and "bxp" not in new_fields_without_data):
+#     raise Exception("New fields {} have no data for the current filtering"
+#                     .format(new_fields_without_data))
 
 print('Generating and testing successor models by adding {} to the test model...'.format(fields_to_add))
 successful_models = list(
