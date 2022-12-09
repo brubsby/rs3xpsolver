@@ -1,4 +1,4 @@
-xp	(bonus)	base	bxp	dxp	bomb	yak_track	torstol	premier	avatar	worn_pulse	pulse	worn_cinder	cinder	sceptre	coin	outfit	raf	prayer_aura	wise	shared	vos	brawlers	inspire	wisdom	scabaras	prime	focus	portable	crystallise	ectofuntus	powder	gilded_altar	chaos_altar	sanctifier	dragon_rider	demonic_skull_runecrafting	demonic_skull_divination	div_energy	demonic_skull_farming	demonic_skull_hunter	demonic_skull_agility	wildy_sword	demonic_skull_slayer	special_slayer_contract	slayer_codex	morytania_legs_slayer	slayer_mask	brassica	juju_god_potion	enhanced_yaktwee	protean_trap	skillchompa	perfect_juju	roar	runecrafting_gloves	zamoraks_favour	bonfire
+xp	(bonus)	base	bxp	dxp	bomb	yak_track	torstol	premier	avatar	worn_pulse	pulse	worn_cinder	cinder	sceptre	coin	outfit	raf	prayer_aura	wise	shared	vos	brawlers	inspire	wisdom	scabaras	prime	focus	portable	crystallise	ectofuntus	powder	gilded_altar	chaos_altar	sanctifier	dragon_rider	demonic_skull_runecrafting	demonic_skull_divination	div_energy	demonic_skull_farming	demonic_skull_hunter	demonic_skull_agility	wildy_sword	demonic_skull_slayer	special_slayer_contract	slayer_codex	morytania_legs_slayer	slayer_mask	brassica	juju_god_potion	enhanced_yaktwee	protean_trap	skillchompa	perfect_juju	roar	runecrafting_gloves	zamoraks_favour	bonfire	festive
 175.0	0.0	175.0
 210.0	35.0	175.0				0.2
 218.7	43.7	175.0				0.2			0.05
@@ -299,3 +299,14 @@ xp	(bonus)	base	bxp	dxp	bomb	yak_track	torstol	premier	avatar	worn_pulse	pulse	w
 1507.8	714.1	635.0				0.2	0.02			0.5						0.01			0.04																														0.1	0.02	0.25
 798.5	244.5	554.0				0.2	0.02				0.08					0.02																																	0.1	0.02
 1223.4	429.7	635.0				0.2	0.02		0.06		0.08					0.01			0.04																														0.1	0.02	0.25
+315.0	105.0	175.0																			0.2																																					0.5
+450.0	150.0	250.0																			0.2																																					0.5
+275.5	100.5	175.0														0.01			0.04																																							0.5
+289.2	114.2	175.0							0.05							0.01			0.04																																							0.5
+292.1	117.1	175.0							0.05							0.02			0.04																																							0.5
+170.1	98.1	72.0							0.05													0.5																																				0.5
+312.9	180.4	132.5							0.05													0.5																																				0.5
+472.5	272.5	200.0							0.05													0.5																																				0.5
+1260.0	1060.0	200.0							0.05													3																																				0.5
+453.6	381.6	72.0							0.05													3																																				0.5
+374.8	312.3	62.5																				3																																				0.5

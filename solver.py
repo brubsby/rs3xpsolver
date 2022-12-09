@@ -667,11 +667,9 @@ activities = {}
 # activities.update(arch_activities)
 # activities.update(firemaking_activities)
 # activities.update(crafting_activites)
-# activities.update(prayer_activities)
+activities.update(prayer_activities)
 # activities.update(slayer_activities)
-# activities.update(farm_activities
-activities = {"draconic_jadinko": 5540}
-# activities = anachronia_jadinko_activities
+# activities.update(farm_activities)
 
 
 def get_boost_on_default_dict(boost_vals):
@@ -841,6 +839,7 @@ general_boost_iterables = dict(
     runecrafting_gloves=[0, 1000],
     zamoraks_favour=[0, 100],
     bonfire=[0, 10, 20, 30, 40],
+    festive=[0, 500],
 )
 
 # each boost lists the order in which their state is the most to least preferable, for experiment design
@@ -866,7 +865,7 @@ boost_preferences = dict(
     wisdom=[0, 25],
     scabaras=[0, 100],
     premier=[0, 100],
-    avatar=[60, 0, 50, 40, 30],
+    avatar=[50, 0, 60, 40, 30],
     torstol=[0, 5, 20, 15, 10],
     outfit=[0, 10, 20, 30, 40, 50, 60],
     focus=[0, 200],
@@ -903,28 +902,86 @@ boost_preferences = dict(
     runecrafting_gloves=[0, 1000],
     zamoraks_favour=[0, 100],
     bonfire=[0, 10, 20, 30, 40],
+    festive=[500, 0],
 )
 
 # boost states that are currently unavailable to experimental design
-invalid_boosts = dict(
+invalid_boosts2 = dict(
     outfit=[40, 60],
-    avatar=[50, 40, 30],  # avatar bonus only 60 or 0 if max fealty
+    avatar=[60, 40, 30],  # avatar bonus only 60 or 0 if max fealty
     yak_track=[0, 100],  # can't toggle yak track
     wise=[10, 20, 30],
     bxp=[1000],
-    # premier=[100],
-    # coin=[20, 0],
-    # sceptre=[40, 0],
-    # worn_pulse=[500],
-    # worn_cinder=[1500],
-    # pulse=[100, 20, 40, 60, 80],
-    # cinder=[100, 20, 40, 60, 80],
-    # torstol=[20, 15, 10],
-    # wisdom=[0],
-    # inspire=[20],
+    premier=[100],
+    coin=[20, 0],
+    sceptre=[40, 0],
+    worn_pulse=[500],
+    worn_cinder=[1500],
+    pulse=[100, 20, 40, 60, 80],
+    cinder=[100, 20, 40, 60, 80],
+    torstol=[20, 15, 10],
+    wisdom=[0],
+    inspire=[20],
     prayer_aura=[25, 20, 10],
     demonic_skull_agility=[range(40, 1960, 40)],  # i'm overlevelled for these
     prime=[100, 1000],  # prime not in game anymore
+)
+
+invalid_boosts = dict(
+    bomb=[500],
+    inspire=[20],
+    yak_track=[200, 100],
+    vos=[200],
+    portable=[100],
+    wise=[40, 30, 20, 10],
+    prime=[100, 1000],
+    bxp=[1000],
+    cinder=[100, 20, 40, 60, 80],
+    worn_cinder=[1500],
+    pulse=[100, 20, 40, 60, 80],
+    worn_pulse=[500],
+    coin=[10, 20],
+    sceptre=[20, 40],
+    wisdom=[25],
+    scabaras=[100],
+    premier=[100],
+    avatar=[60, 40, 30],
+    torstol=[5, 20, 15, 10],
+    outfit=[10, 20, 30, 40, 50, 60],
+    focus=[200],
+    shared=[250],
+    crystallise=[200, 400, 500, 875],  # 500(875) when wc/fish/hunt, 200(400) mining (light form)
+    ectofuntus=[3000],
+    gilded_altar=[1500, 2000, 2500],
+    chaos_altar=[2500],
+    sanctifier=[2500],
+    powder=[2500],
+    prayer_aura=[15, 25, 20, 10],
+    dragon_rider=[1000],
+    # ranges are all wildy agility
+    demonic_skull_runecrafting=[2500],
+    demonic_skull_farming=[200],
+    demonic_skull_divination=[200],
+    demonic_skull_hunter=[200],
+    demonic_skull_agility=[*inclusive_range(40, 1960, 40)],
+    demonic_skull_slayer=[200],
+    special_slayer_contract=[100],
+    div_energy=[250],
+    wildy_sword=[50],
+    morytania_legs_slayer=[100],
+    slayer_mask=[850, 10, 50, 150, 250, 400, 500, 520, 600, 650, 670, 700, 730, 750, 770, 780, 800, 860, 900, 910,
+                 920, 930, 950],  # prefer abyssal demons
+    slayer_codex=[40, 50, 10, 20, 30],
+    juju_god_potion=[100],
+    brassica=[100],
+    enhanced_yaktwee=[20],
+    protean_trap=[500],
+    skillchompa=[100],
+    perfect_juju=[50],
+    roar=[250],
+    runecrafting_gloves=[1000],
+    zamoraks_favour=[100],
+    bonfire=[10, 20, 30, 40],
 )
 
 # store the mutually exclusive boosts as an edge list for validation
@@ -1002,7 +1059,7 @@ sota_model = dict(
     additive3=[["juju_god_potion"]],
     constant=[],
     chain1=[["worn_pulse"], ["pulse"], ["sceptre"], ["coin"], ["torstol"]],
-    chain2=[["wise", "outfit", "premier", "inspire", "slayer_codex", "enhanced_yaktwee"], ["wisdom", "prayer_aura"], ["brawlers"]],
+    chain2=[["wise", "outfit", "premier", "inspire", "slayer_codex", "enhanced_yaktwee"], ["wisdom", "prayer_aura", "festive"], ["brawlers"]],
     chain3=[],
     multiplicative=[["avatar"]],
     bonus=[["worn_cinder"], ["cinder"]],
@@ -1053,7 +1110,7 @@ counting_model = dict(first=[])
 remaining_fields = ['firemaking_familiar', 'tangled_fishbowl', 'swift_sailfish', 'dwarven_battleaxe',
                     'brooch', 'furnace', 'sharks_tooth_necklace', 'collectors_insignia', 'fish_gloves',
                     'dragon_slayer_gloves', 'dxp', 'raf']
-fields_to_add = ['bonfire']
+fields_to_add = ['festive']
 allowed_errors = 0
 allowed_tolerance = 0
 experiment_search_time = 1
